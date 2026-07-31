@@ -74,6 +74,8 @@ type Server struct {
 	mailWatcherInitialFetchLimit   int
 	mailWatcherLookback            time.Duration
 	mailWatcherActiveUntil         map[string]time.Time
+	startAppleAccountManageLogin   func(context.Context, string, string, *appleAuthPendingStore, string) (appleAuthStartResult, error)
+	submitAppleAccountManage2FA    func(context.Context, appleAuthPending, string, json.RawMessage) (ICloudSession, error)
 	appleAccountKeepAliveMu        sync.Mutex
 	appleAccountKeepAliveCancel    context.CancelFunc
 	appleAccountKeepAliveEnabled   bool
@@ -250,6 +252,12 @@ func NewServer(cfg Config, store *FileStore, logger *slog.Logger) http.Handler {
 		s.appleAccountKeepAliveInterval = time.Duration(cfg.AppleAccountKeepAliveMS) * time.Millisecond
 	}
 	s.createMailboxForOwner = s.createICloudMailboxForOwner
+	s.startAppleAccountManageLogin = func(ctx context.Context, appleID, password string, pendingStore *appleAuthPendingStore, twoFactorMethod string) (appleAuthStartResult, error) {
+		return NewAppleAuthClient().StartAppleAccountManageLogin(ctx, appleID, password, pendingStore, twoFactorMethod)
+	}
+	s.submitAppleAccountManage2FA = func(ctx context.Context, pending appleAuthPending, code string, phoneNumber json.RawMessage) (ICloudSession, error) {
+		return NewAppleAuthClient().SubmitAppleAccountManage2FA(ctx, pending, code, phoneNumber)
+	}
 	s.keepAliveAppleAccountState = func(ctx context.Context, state LoginState) (LoginState, error) {
 		return NewICloudClient().keepAliveAppleAccountManageStateUnlocked(ctx, state)
 	}
@@ -1309,11 +1317,15 @@ func checkSavedLoginStatesWithIMAP(ctx context.Context, client *ICloudClient, se
 		state, _ := appleAccountLoginState(session)
 		if err != nil {
 			lastErr = err
-			state.LastCheckedAt = checkedAt
-			state.LastCheckOK = false
-			state.LastStatusMessage = "新接口登录态异常：" + err.Error()
-			session = withAppleAccountLoginState(session, state)
-			parts = append(parts, "新接口异常")
+			if isCodedError(err, appleAccountAuthFailedCode) {
+				state.LastCheckedAt = checkedAt
+				state.LastCheckOK = false
+				state.LastStatusMessage = "新接口登录态异常：" + err.Error()
+				session = withAppleAccountLoginState(session, state)
+				parts = append(parts, "新接口认证失效")
+			} else {
+				parts = append(parts, "新接口检测暂时失败（保活继续）")
+			}
 		} else {
 			session = updated
 			state, _ = appleAccountLoginState(session)
@@ -1484,7 +1496,7 @@ func (s *Server) handleStartAppleAccountLogin(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	result, err := NewAppleAuthClient().StartAppleAccountManageLogin(
+	result, err := s.startAppleAccountManageLogin(
 		r.Context(),
 		payload.AppleID,
 		payload.Password,
@@ -1492,7 +1504,7 @@ func (s *Server) handleStartAppleAccountLogin(w http.ResponseWriter, r *http.Req
 		payload.TwoFactorMethod,
 	)
 	if err != nil {
-		writeError(w, http.StatusBadGateway, err)
+		s.writeAppleAccountLoginError(w, "start", err)
 		return
 	}
 	if result.Needs2FA {
@@ -1535,9 +1547,9 @@ func (s *Server) handleSubmitAppleAccount2FA(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusBadRequest, errCode("apple_login_pending_expired", "新接口登录已过期，请重新输入账号密码发起登录", true))
 		return
 	}
-	session, err := NewAppleAuthClient().SubmitAppleAccountManage2FA(r.Context(), pending, payload.Code, payload.PhoneNumber)
+	session, err := s.submitAppleAccountManage2FA(r.Context(), pending, payload.Code, payload.PhoneNumber)
 	if err != nil {
-		writeError(w, http.StatusBadGateway, err)
+		s.writeAppleAccountLoginError(w, "2fa", err)
 		return
 	}
 	s.appleAccountLogins.delete(payload.PendingID)
@@ -1552,6 +1564,40 @@ func (s *Server) handleSubmitAppleAccount2FA(w http.ResponseWriter, r *http.Requ
 		"session":  publicSessionForAppleID(sessions, session.AppleID),
 		"sessions": sessions,
 	})
+}
+
+func (s *Server) writeAppleAccountLoginError(w http.ResponseWriter, stage string, err error) {
+	err = normalizeAppleAccountLoginError(err)
+	var coded codedError
+	if errors.As(err, &coded) && s.logger != nil {
+		s.logger.Warn("apple account login failed", "stage", stage, "code", coded.code, "retryable", coded.retryable)
+	}
+	writeError(w, appleAccountLoginErrorStatus(err), err)
+}
+
+func normalizeAppleAccountLoginError(err error) error {
+	if err == nil {
+		return nil
+	}
+	var coded codedError
+	if errors.As(err, &coded) {
+		if coded.code == "apple_2fa_failed" {
+			return errCode("apple_2fa_failed", "Apple 2FA 验证失败，请检查验证码后重试", coded.retryable)
+		}
+		return err
+	}
+	return errCode("apple_account_login_failed", "Apple Account 登录暂时失败，请稍后重试", true)
+}
+
+func appleAccountLoginErrorStatus(err error) int {
+	var coded codedError
+	if errors.As(err, &coded) {
+		switch coded.code {
+		case "apple_credentials_missing", "invalid_2fa_code", "invalid_phone_number_payload":
+			return http.StatusBadRequest
+		}
+	}
+	return http.StatusUnprocessableEntity
 }
 
 func (s *Server) handleCreateICloudMailbox(w http.ResponseWriter, r *http.Request) {
@@ -2781,7 +2827,7 @@ func (s *Server) keepAliveAppleAccountRound(ctx context.Context) {
 		release()
 		cancel()
 		if err != nil {
-			if isCodedError(err, "apple_account_auth_failed") {
+			if isCodedError(err, appleAccountAuthFailedCode) {
 				state.LastCheckedAt = time.Now()
 				state.LastCheckOK = false
 				state.LastStatusMessage = "新接口登录态异常：" + err.Error()

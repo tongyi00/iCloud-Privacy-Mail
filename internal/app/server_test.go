@@ -110,6 +110,85 @@ func TestAppleAccountFDClientInfoUsesBrowserFingerprint(t *testing.T) {
 	}
 }
 
+func TestAppleAccountLoginRoutesReturnJSONForExpectedErrors(t *testing.T) {
+	tests := []struct {
+		name       string
+		path       string
+		prepare    func(*testing.T, *Server) string
+		wantStatus int
+		want       apiError
+	}{
+		{
+			name: "start preserves credential error",
+			path: "/api/apple-account/login/start",
+			prepare: func(t *testing.T, server *Server) string {
+				server.startAppleAccountManageLogin = func(context.Context, string, string, *appleAuthPendingStore, string) (appleAuthStartResult, error) {
+					return appleAuthStartResult{}, errCode("apple_credentials_invalid", "Apple ID 或密码错误，请检查后重新协议登录", false)
+				}
+				return `{"apple_id":"user@example.com","password":"wrong"}`
+			},
+			wantStatus: http.StatusUnprocessableEntity,
+			want:       apiError{Code: "apple_credentials_invalid", Message: "Apple ID 或密码错误，请检查后重新协议登录"},
+		},
+		{
+			name: "2fa hides upstream transport detail",
+			path: "/api/apple-account/login/2fa",
+			prepare: func(t *testing.T, server *Server) string {
+				pending, err := server.appleAccountLogins.put(&appleAuthSession{})
+				if err != nil {
+					t.Fatal(err)
+				}
+				server.submitAppleAccountManage2FA = func(context.Context, appleAuthPending, string, json.RawMessage) (ICloudSession, error) {
+					return ICloudSession{}, errCode("apple_2fa_failed", "Apple 2FA 验证失败：dial tcp 10.0.0.12:443: i/o timeout", true)
+				}
+				return `{"pending_id":"` + pending.ID + `","code":"123456"}`
+			},
+			wantStatus: http.StatusUnprocessableEntity,
+			want:       apiError{Code: "apple_2fa_failed", Message: "Apple 2FA 验证失败，请检查验证码后重试", Retryable: true},
+		},
+		{
+			name: "2fa returns bad request for invalid input",
+			path: "/api/apple-account/login/2fa",
+			prepare: func(t *testing.T, server *Server) string {
+				pending, err := server.appleAccountLogins.put(&appleAuthSession{})
+				if err != nil {
+					t.Fatal(err)
+				}
+				server.submitAppleAccountManage2FA = func(context.Context, appleAuthPending, string, json.RawMessage) (ICloudSession, error) {
+					return ICloudSession{}, errCode("invalid_2fa_code", "2FA 验证码必须是 6 位", false)
+				}
+				return `{"pending_id":"` + pending.ID + `","code":"123"}`
+			},
+			wantStatus: http.StatusBadRequest,
+			want:       apiError{Code: "invalid_2fa_code", Message: "2FA 验证码必须是 6 位"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := NewServer(Config{}, newTestStore(t), discardLogger()).(*Server)
+			cookie, _ := registerTestUser(t, server, "route-error-"+strings.ReplaceAll(tt.name, " ", "-"), "password")
+			body := tt.prepare(t, server)
+			rr := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPost, tt.path, strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			req.AddCookie(cookie)
+			server.ServeHTTP(rr, req)
+
+			if rr.Code != tt.wantStatus {
+				t.Fatalf("status = %d body=%s, want %d", rr.Code, rr.Body.String(), tt.wantStatus)
+			}
+			var got apiError
+			if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+				t.Fatal(err)
+			}
+			if got != tt.want {
+				t.Fatalf("error = %#v, want %#v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestAppleDomainRedirectMapsDomainToHost(t *testing.T) {
 	tests := []struct {
 		domain string
@@ -1660,6 +1739,92 @@ func TestCheckSavedLoginStatesKeepsRecentlyHealthyAppleAccountState(t *testing.T
 	state, found := appleAccountLoginState(session)
 	if !found || !state.LastCheckOK || state.LastStatusMessage != "新接口登录态正常" || !state.LastCheckedAt.Equal(now) {
 		t.Fatalf("state = %+v found=%t, want healthy state updated at check time", state, found)
+	}
+}
+
+func TestCheckSavedLoginStatesKeepsAppleAccountEligibleAfterTransientFailure(t *testing.T) {
+	oldBaseURL := appleAccountManageBaseURL
+	defer func() { appleAccountManageBaseURL = oldBaseURL }()
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/account/manage/gs/ws/token" {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`{"service_errors":[{"message":"temporary outage"}]}`))
+	}))
+	defer ts.Close()
+	appleAccountManageBaseURL = ts.URL
+
+	lastHealthyAt := time.Date(2026, 7, 31, 12, 0, 0, 0, time.UTC)
+	checkedAt := lastHealthyAt.Add(5 * time.Minute)
+	session, ok, err := checkSavedLoginStates(context.Background(), &ICloudClient{client: ts.Client()}, ICloudSession{
+		LoginStates: []LoginState{{
+			Kind:              LoginStateAppleAccount,
+			Scnt:              "active-scnt",
+			APIKey:            "active-api-key",
+			LastCheckedAt:     lastHealthyAt,
+			LastCheckOK:       true,
+			LastStatusMessage: "新接口登录态正常",
+		}},
+	}, checkedAt)
+	if err == nil || ok {
+		t.Fatalf("transient check result = ok:%t err:%v, want failure", ok, err)
+	}
+	state, found := appleAccountLoginState(session)
+	if !found {
+		t.Fatalf("Apple Account state missing: %+v", session.LoginStates)
+	}
+	if !state.LastCheckOK || !state.LastCheckedAt.Equal(lastHealthyAt) || state.LastStatusMessage != "新接口登录态正常" {
+		t.Fatalf("transient failure changed keepalive state: %+v", state)
+	}
+	if !appleAccountKeepAliveEligible(session) {
+		t.Fatalf("transient failure made Apple Account ineligible for keepalive: %+v", state)
+	}
+}
+
+func TestCheckSavedLoginStatesStopsAppleAccountKeepAliveAfterAuthenticationFailure(t *testing.T) {
+	oldBaseURL := appleAccountManageBaseURL
+	defer func() { appleAccountManageBaseURL = oldBaseURL }()
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/account/manage/gs/ws/token" {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"service_errors":[{"message":"authentication_failed"}]}`))
+	}))
+	defer ts.Close()
+	appleAccountManageBaseURL = ts.URL
+
+	lastHealthyAt := time.Date(2026, 7, 31, 12, 0, 0, 0, time.UTC)
+	checkedAt := lastHealthyAt.Add(5 * time.Minute)
+	session, ok, err := checkSavedLoginStates(context.Background(), &ICloudClient{client: ts.Client()}, ICloudSession{
+		LoginStates: []LoginState{{
+			Kind:          LoginStateAppleAccount,
+			Scnt:          "expired-scnt",
+			APIKey:        "expired-api-key",
+			LastCheckedAt: lastHealthyAt,
+			LastCheckOK:   true,
+		}},
+	}, checkedAt)
+	if err == nil || ok {
+		t.Fatalf("authentication failure result = ok:%t err:%v, want failure", ok, err)
+	}
+	if !isCodedError(err, "apple_account_auth_failed") {
+		t.Fatalf("error = %v, want apple_account_auth_failed", err)
+	}
+	state, found := appleAccountLoginState(session)
+	if !found {
+		t.Fatalf("Apple Account state missing: %+v", session.LoginStates)
+	}
+	if state.LastCheckOK || !state.LastCheckedAt.Equal(checkedAt) || !strings.Contains(state.LastStatusMessage, "管理态已失效") {
+		t.Fatalf("authentication failure did not mark state failed: %+v", state)
+	}
+	if appleAccountKeepAliveEligible(session) {
+		t.Fatalf("authentication failure kept Apple Account eligible for keepalive: %+v", state)
 	}
 }
 

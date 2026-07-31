@@ -73,7 +73,10 @@ const (
 	appleAccountManageTZOffset   = 8 * 60 * 60
 )
 
-const appleAccountHTTPStatusSessionTimeout = 419
+const (
+	appleAccountHTTPStatusSessionTimeout = 419
+	appleAccountAuthFailedCode           = "apple_account_auth_failed"
+)
 
 func appleAccountManageHostForICloudHost(host string) string {
 	host = strings.ToLower(strings.TrimSpace(host))
@@ -1087,7 +1090,7 @@ func appleAccountAPIError(status int, data []byte, stage string) error {
 		return errCode("apple_account_hme_limit", "Apple Account 已达到当前隐私邮箱创建上限，请稍后再试；"+detail, true)
 	}
 	if status == appleAccountHTTPStatusSessionTimeout || ((status == http.StatusUnauthorized || status == http.StatusForbidden) && appleAccountBodyLooksAuthExpired(lower)) {
-		return errCode("apple_account_auth_failed", "Apple Account 管理态已失效，请重新协议登录；"+detail, true)
+		return errCode(appleAccountAuthFailedCode, "Apple Account 管理态已失效，请重新协议登录；"+detail, true)
 	}
 	return errCode("apple_account_api_failed", "Apple Account 接口失败；"+detail, true)
 }
