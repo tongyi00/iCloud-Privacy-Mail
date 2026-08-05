@@ -3072,21 +3072,9 @@
       $('mailboxMessagesList').innerHTML = '<p class="muted">正在读取…</p>';
       $('mailboxMessagesModal').classList.add('show');
       try {
-        let data = await api(`/api/mailboxes/${encodeURIComponent(id)}/messages`);
-        let messages = data.messages || [];
-        let refreshFailed = false;
-        if (messages.some(message => mailboxMessageNeedsHTMLRefresh(message.body))) {
-          $('mailboxMessagesInfo').textContent = '正在重新同步旧邮件的 HTML 正文…';
-          try {
-            await api(`/api/mailboxes/${encodeURIComponent(id)}/sync?keyword=ChatGPT&refresh=1`, {method:'POST', body:'{}'});
-            data = await api(`/api/mailboxes/${encodeURIComponent(id)}/messages`);
-            messages = data.messages || [];
-          } catch (err) {
-            refreshFailed = true;
-            log('重新同步 HTML 邮件失败：' + err.message);
-          }
-        }
-        $('mailboxMessagesInfo').textContent = `共 ${messages.length} 封已同步邮件${refreshFailed ? '（重新同步失败，显示旧缓存）' : ''}`;
+        const data = await api(`/api/mailboxes/${encodeURIComponent(id)}/messages`);
+        const messages = data.messages || [];
+        $('mailboxMessagesInfo').textContent = `共 ${messages.length} 封已同步邮件`;
         $('mailboxMessagesList').innerHTML = messages.length
           ? messages.map(message => `<article class="mailbox-message">
               <div class="mail-title">${esc(message.subject || '（无主题）')}</div>
@@ -3104,11 +3092,6 @@
         $('mailboxMessagesInfo').textContent = '读取邮件失败';
         $('mailboxMessagesList').innerHTML = `<p class="muted">${esc(err.message)}</p>`;
       }
-    }
-
-    function mailboxMessageNeedsHTMLRefresh(body) {
-      const value = String(body || '');
-      return !/<\s*[a-z][^>]*>/i.test(value) && /@font-face|\.ExternalClass|#outlook|#bodyCell/.test(value);
     }
 
     function mailboxMessageDocument(body) {
