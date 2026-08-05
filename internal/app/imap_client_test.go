@@ -3,6 +3,7 @@ package app
 import (
 	"encoding/binary"
 	"net"
+	"strings"
 	"testing"
 	"time"
 )
@@ -34,6 +35,35 @@ func TestICloudIMAPMessagesByMailboxMatchesRecipientAlias(t *testing.T) {
 	}
 	if len(got["mbx_other"]) != 0 {
 		t.Fatalf("wrong alias received messages: %+v", got["mbx_other"])
+	}
+}
+
+func TestParseICloudIMAPMessagePrefersHTMLPart(t *testing.T) {
+	raw := "From: OpenAI <noreply@tm.openai.com>\r\n" +
+		"To: alias@icloud.com\r\n" +
+		"Subject: Your temporary ChatGPT verification code\r\n" +
+		"Content-Type: multipart/alternative; boundary=mail-boundary\r\n" +
+		"\r\n" +
+		"--mail-boundary\r\n" +
+		"Content-Type: text/plain; charset=utf-8\r\n\r\n" +
+		"Plain code: 161852\r\n" +
+		"--mail-boundary\r\n" +
+		"Content-Type: text/html; charset=utf-8\r\n\r\n" +
+		"<style>p{color:red}</style><p>HTML code: 161852</p>\r\n" +
+		"--mail-boundary--\r\n"
+
+	message, _, ok := parseICloudIMAPMessage(iCloudIMAPFetchedMessage{UID: "42", Raw: []byte(raw)})
+	if !ok {
+		t.Fatal("parseICloudIMAPMessage() ok = false")
+	}
+	if !strings.Contains(message.Body, "<style>p{color:red}</style><p>HTML code: 161852</p>") {
+		t.Fatalf("body = %q, want preserved HTML", message.Body)
+	}
+	if strings.Contains(message.Body, "Plain code") {
+		t.Fatalf("body = %q, must prefer HTML over plain text", message.Body)
+	}
+	if code := extractOTP(message.Subject + "\n" + message.Body); code != "161852" {
+		t.Fatalf("code = %q, want 161852", code)
 	}
 }
 

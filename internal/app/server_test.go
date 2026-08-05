@@ -5985,6 +5985,44 @@ func TestSyncMailboxUsesMailboxAccountSession(t *testing.T) {
 	}
 }
 
+func TestSyncMailboxWithRefreshIgnoresStoredCursors(t *testing.T) {
+	oldInterval := mailboxMailSyncMinInterval
+	mailboxMailSyncMinInterval = 0
+	t.Cleanup(func() { mailboxMailSyncMinInterval = oldInterval })
+
+	store := newTestStore(t)
+	ownerID := "owner-html-refresh"
+	session := testIMAPSession(ownerID, "", "owner@example.com")
+	session.LoginStates[0].IMAPLastSyncUID = "99"
+	if err := store.SaveICloudSessionForOwner(ownerID, session); err != nil {
+		t.Fatal(err)
+	}
+	sessions := store.ICloudSessionsForOwner(ownerID)
+	mailbox, err := store.AddMailboxForOwner(ownerID, sessions[0].AccountID, "HTML", "html@icloud.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.SetMailboxSyncCursor(mailbox.ID, time.Now(), "99"); err != nil {
+		t.Fatal(err)
+	}
+
+	handler := NewServer(Config{}, store, discardLogger())
+	server := handler.(*Server)
+	server.syncCodeMailboxBatch = func(_ context.Context, state LoginState, mailboxes []Mailbox, _ time.Time, _ string, maxMessages int) (map[string][]ICloudSyncedMessage, error) {
+		if state.IMAPLastSyncUID != "" || len(mailboxes) != 1 || mailboxes[0].LastSyncUID != "" || maxMessages != 50 {
+			t.Fatalf("refresh sync input = state:%+v mailboxes:%+v max=%d", state, mailboxes, maxMessages)
+		}
+		return map[string][]ICloudSyncedMessage{
+			mailbox.ID: {{RemoteID: "imap:99", UID: "99", Subject: "ChatGPT code", Body: "Use 161852 to continue.", ReceivedAt: time.Now()}},
+		}, nil
+	}
+
+	count, err := server.syncMailboxWithRefresh(context.Background(), mailbox, time.Now().Add(-30*24*time.Hour), "ChatGPT", true)
+	if err != nil || count != 1 {
+		t.Fatalf("refresh sync count=%d err=%v", count, err)
+	}
+}
+
 func TestListMailboxMessagesReturnsAllMailboxMessages(t *testing.T) {
 	store := newTestStore(t)
 	handler := NewServer(Config{}, store, discardLogger())
@@ -6020,6 +6058,25 @@ func TestListMailboxMessagesReturnsAllMailboxMessages(t *testing.T) {
 	}
 	if !body.Success || len(body.Messages) != 2 || body.Messages[1].Body != "Second message" {
 		t.Fatalf("messages = %+v, want both mailbox messages", body.Messages)
+	}
+}
+
+func TestMailboxHTMLPreviewUsesSandboxedIFrame(t *testing.T) {
+	page, err := webFS.ReadFile("templates/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"frame.sandbox = ''",
+		"frame.referrerPolicy = 'no-referrer'",
+		"frame.srcdoc = mailboxMessageDocument(message.body)",
+	} {
+		if !strings.Contains(string(page), want) {
+			t.Fatalf("mailbox HTML preview is missing %q", want)
+		}
+	}
+	if strings.Contains(string(page), "<pre>${esc(message.body") {
+		t.Fatal("mailbox message body must not be rendered as escaped HTML text")
 	}
 }
 

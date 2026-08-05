@@ -910,7 +910,7 @@ func parseICloudIMAPMessage(item iCloudIMAPFetchedMessage) (ICloudSyncedMessage,
 		UID:        uid,
 		Subject:    subject,
 		From:       from,
-		Body:       normalizeMailBody(subject + "\n" + body),
+		Body:       strings.TrimSpace(body),
 		ReceivedAt: receivedAt,
 	}, recipients, true
 }
@@ -1052,6 +1052,7 @@ func decodeICloudIMAPBody(header mail.Header, body []byte) string {
 			return string(decoded)
 		}
 		reader := multipart.NewReader(bytes.NewReader(decoded), boundary)
+		var plain, htmlBody string
 		var parts []string
 		for i := 0; i < 30; i++ {
 			part, err := reader.NextPart()
@@ -1060,9 +1061,27 @@ func decodeICloudIMAPBody(header mail.Header, body []byte) string {
 			}
 			partBody, _ := io.ReadAll(io.LimitReader(part, 1<<20))
 			text := decodeICloudIMAPBody(mail.Header(part.Header), partBody)
-			if strings.TrimSpace(text) != "" {
+			if strings.TrimSpace(text) == "" {
+				continue
+			}
+			partType, _, err := mime.ParseMediaType(part.Header.Get("Content-Type"))
+			if err != nil {
+				partType = part.Header.Get("Content-Type")
+			}
+			switch strings.ToLower(partType) {
+			case "text/html":
+				htmlBody = text
+			case "text/plain":
+				plain = text
+			default:
 				parts = append(parts, text)
 			}
+		}
+		if strings.TrimSpace(htmlBody) != "" {
+			return htmlBody
+		}
+		if strings.TrimSpace(plain) != "" {
+			return plain
 		}
 		return strings.Join(parts, "\n")
 	}

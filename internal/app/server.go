@@ -2109,7 +2109,12 @@ func (s *Server) handleSyncMailbox(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	count, err := s.syncMailbox(r.Context(), mailbox, after, strings.TrimSpace(r.URL.Query().Get("keyword")))
+	refresh := r.URL.Query().Get("refresh") == "1"
+	if refresh && after.IsZero() {
+		// ponytail: 仅回补最近 30 天；需要更早历史邮件时改为分页回补。
+		after = time.Now().Add(-30 * 24 * time.Hour)
+	}
+	count, err := s.syncMailboxWithRefresh(r.Context(), mailbox, after, strings.TrimSpace(r.URL.Query().Get("keyword")), refresh)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err)
 		return
@@ -3172,10 +3177,22 @@ func mailWatcherIMAPGroupSignature(state LoginState, mailboxes []Mailbox) string
 }
 
 func (s *Server) syncMailbox(ctx context.Context, mailbox Mailbox, after time.Time, keyword string) (int, error) {
-	return s.syncMailboxCodeBatchForOwnerWithLimit(ctx, mailbox.OwnerID, []Mailbox{mailbox}, after, keyword, mailboxSyncThreadLimit(mailbox))
+	return s.syncMailboxWithRefresh(ctx, mailbox, after, keyword, false)
+}
+
+func (s *Server) syncMailboxWithRefresh(ctx context.Context, mailbox Mailbox, after time.Time, keyword string, refresh bool) (int, error) {
+	maxMessages := mailboxSyncThreadLimit(mailbox)
+	if refresh {
+		maxMessages = 50
+	}
+	return s.syncMailboxCodeBatchForOwnerWithRefresh(ctx, mailbox.OwnerID, []Mailbox{mailbox}, after, keyword, maxMessages, refresh)
 }
 
 func (s *Server) syncMailboxCodeBatchForOwnerWithLimit(ctx context.Context, ownerID string, mailboxes []Mailbox, after time.Time, keyword string, maxMessages int) (int, error) {
+	return s.syncMailboxCodeBatchForOwnerWithRefresh(ctx, ownerID, mailboxes, after, keyword, maxMessages, false)
+}
+
+func (s *Server) syncMailboxCodeBatchForOwnerWithRefresh(ctx context.Context, ownerID string, mailboxes []Mailbox, after time.Time, keyword string, maxMessages int, refresh bool) (int, error) {
 	if len(mailboxes) == 0 {
 		return 0, nil
 	}
@@ -3190,6 +3207,10 @@ func (s *Server) syncMailboxCodeBatchForOwnerWithLimit(ctx context.Context, owne
 		latest, ok := s.store.FindMailboxByID(mailbox.ID)
 		if !ok || !latest.APIActive || latest.Status == StatusDisabled || !latest.ICloudActive {
 			continue
+		}
+		if refresh {
+			latest.LastSyncAt = time.Time{}
+			latest.LastSyncUID = ""
 		}
 		refreshed = append(refreshed, latest)
 	}
@@ -3240,7 +3261,12 @@ func (s *Server) syncMailboxCodeBatchForOwnerWithLimit(ctx context.Context, owne
 	synced := 0
 	for _, key := range order {
 		group := groups[key]
-		syncResult, err := syncFn(ctx, group.state, group.mailboxes, after, keyword, maxMessages)
+		state := group.state
+		if refresh {
+			state.IMAPLastSyncAt = time.Time{}
+			state.IMAPLastSyncUID = ""
+		}
+		syncResult, err := syncFn(ctx, state, group.mailboxes, after, keyword, maxMessages)
 		if err != nil {
 			return synced, err
 		}

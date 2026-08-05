@@ -918,7 +918,7 @@
     }
     .mailbox-messages { max-height: calc(100vh - 220px); overflow-y: auto; padding: 0 18px 18px; }
     .mailbox-message { border-top: 1px solid var(--line); padding: 14px 0; }
-    .mailbox-message pre { margin: 8px 0 0; white-space: pre-wrap; word-break: break-word; font: inherit; }
+    .mailbox-message-html { width: 100%; height: 360px; margin-top: 8px; border: 0; background: #fff; resize: vertical; }
     body[data-density="compact"] .content-head { padding: 12px 18px; }
     body[data-density="compact"] .content-main { padding: 0; }
     body[data-density="compact"] .global-log-panel { margin: 0 18px 24px; }
@@ -3072,20 +3072,50 @@
       $('mailboxMessagesList').innerHTML = '<p class="muted">正在读取…</p>';
       $('mailboxMessagesModal').classList.add('show');
       try {
-        const data = await api(`/api/mailboxes/${encodeURIComponent(id)}/messages`);
-        const messages = data.messages || [];
-        $('mailboxMessagesInfo').textContent = `共 ${messages.length} 封已同步邮件`;
+        let data = await api(`/api/mailboxes/${encodeURIComponent(id)}/messages`);
+        let messages = data.messages || [];
+        let refreshFailed = false;
+        if (messages.some(message => mailboxMessageNeedsHTMLRefresh(message.body))) {
+          $('mailboxMessagesInfo').textContent = '正在重新同步旧邮件的 HTML 正文…';
+          try {
+            await api(`/api/mailboxes/${encodeURIComponent(id)}/sync?keyword=ChatGPT&refresh=1`, {method:'POST', body:'{}'});
+            data = await api(`/api/mailboxes/${encodeURIComponent(id)}/messages`);
+            messages = data.messages || [];
+          } catch (err) {
+            refreshFailed = true;
+            log('重新同步 HTML 邮件失败：' + err.message);
+          }
+        }
+        $('mailboxMessagesInfo').textContent = `共 ${messages.length} 封已同步邮件${refreshFailed ? '（重新同步失败，显示旧缓存）' : ''}`;
         $('mailboxMessagesList').innerHTML = messages.length
           ? messages.map(message => `<article class="mailbox-message">
               <div class="mail-title">${esc(message.subject || '（无主题）')}</div>
               <div class="muted">发件人：${esc(message.from || '未知')} · 收件时间：${esc(message.received_at || message.created_at || '未知')}</div>
-              <pre>${esc(message.body || '（无正文）')}</pre>
+              <iframe class="mailbox-message-html" title="邮件正文"></iframe>
             </article>`).join('')
           : '<p class="muted">暂无已同步邮件</p>';
+        $('mailboxMessagesList').querySelectorAll('.mailbox-message-html').forEach((frame, index) => {
+          const message = messages[index];
+          frame.sandbox = '';
+          frame.referrerPolicy = 'no-referrer';
+          frame.srcdoc = mailboxMessageDocument(message.body);
+        });
       } catch (err) {
         $('mailboxMessagesInfo').textContent = '读取邮件失败';
         $('mailboxMessagesList').innerHTML = `<p class="muted">${esc(err.message)}</p>`;
       }
+    }
+
+    function mailboxMessageNeedsHTMLRefresh(body) {
+      const value = String(body || '');
+      return !/<\s*[a-z][^>]*>/i.test(value) && /@font-face|\.ExternalClass|#outlook|#bodyCell/.test(value);
+    }
+
+    function mailboxMessageDocument(body) {
+      const csp = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'">`;
+      const value = String(body || '');
+      if (/<\s*[a-z][^>]*>/i.test(value)) return `<!doctype html>${csp}${value}`;
+      return `<!doctype html>${csp}<pre style="white-space:pre-wrap;word-break:break-word;font:14px/1.6 sans-serif">${esc(value || '（无正文）')}</pre>`;
     }
 
     function closeMailboxMessages(event) {
