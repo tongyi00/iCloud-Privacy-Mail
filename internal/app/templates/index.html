@@ -916,6 +916,9 @@
       box-shadow: 0 36px 120px rgba(6, 22, 55, .28);
       overflow: hidden;
     }
+    .mailbox-messages { max-height: calc(100vh - 220px); overflow-y: auto; padding: 0 18px 18px; }
+    .mailbox-message { border-top: 1px solid var(--line); padding: 14px 0; }
+    .mailbox-message pre { margin: 8px 0 0; white-space: pre-wrap; word-break: break-word; font: inherit; }
     body[data-density="compact"] .content-head { padding: 12px 18px; }
     body[data-density="compact"] .content-main { padding: 0; }
     body[data-density="compact"] .global-log-panel { margin: 0 18px 24px; }
@@ -1375,6 +1378,16 @@
         <button class="ghost" onclick="closeRunConfig()">关闭</button>
       </div>
       <div class="hint">导出数据：当前账号的登录账号/登录态 + 隐私邮箱池；邮箱API 每行 邮箱----API / CSV 两列；只导出邮箱为一行一个邮箱。导出邮箱支持选择指定 Apple 登录态。管理员导出全量数据，普通用户只导出自己的数据。</div>
+    </section>
+  </div>
+  <div id="mailboxMessagesModal" class="modal-backdrop" onclick="closeMailboxMessages(event)">
+    <section class="modal" role="dialog" aria-modal="true" aria-labelledby="mailboxMessagesTitle">
+      <div class="panel-head">
+        <h2 id="mailboxMessagesTitle">邮箱邮件</h2>
+        <p id="mailboxMessagesInfo" aria-live="polite"></p>
+      </div>
+      <div id="mailboxMessagesList" class="mailbox-messages"></div>
+      <div class="toolbar"><button class="ghost" onclick="closeMailboxMessages()">关闭</button></div>
     </section>
   </div>
   <script>
@@ -2561,6 +2574,7 @@
               </span>
               <button id="verifyButton-${esc(row.id)}" onclick="verifyMailbox('${row.id}')">${verifyButtonText(row.id)}</button>
               <button class="${syncButtonClass(row.id)}" onclick="syncMailbox('${row.id}')" ${syncButtonDisabled(row.id)}>${syncButtonText(row.id)}</button>
+              <button onclick="showMailboxMessages('${row.id}')">显示邮件</button>
               <button onclick="cleanRemoteMailbox('${row.id}')" title="把本地已同步过的远端邮件移到废纸篓，并清空当前 iCloud 废纸篓">删除邮件</button>
               <select onchange="setMailboxStatus('${row.id}', this.value)">
                 <option value="">改状态</option>
@@ -3048,6 +3062,35 @@
       } finally {
         resetMailboxSyncResultLater(id);
       }
+    }
+
+    async function showMailboxMessages(id) {
+      const row = lastMailboxes.find(x => x.id === id);
+      if (!row) return;
+      $('mailboxMessagesTitle').textContent = `邮件：${row.email}`;
+      $('mailboxMessagesInfo').textContent = '正在读取已同步邮件…';
+      $('mailboxMessagesList').innerHTML = '<p class="muted">正在读取…</p>';
+      $('mailboxMessagesModal').classList.add('show');
+      try {
+        const data = await api(`/api/mailboxes/${encodeURIComponent(id)}/messages`);
+        const messages = data.messages || [];
+        $('mailboxMessagesInfo').textContent = `共 ${messages.length} 封已同步邮件`;
+        $('mailboxMessagesList').innerHTML = messages.length
+          ? messages.map(message => `<article class="mailbox-message">
+              <div class="mail-title">${esc(message.subject || '（无主题）')}</div>
+              <div class="muted">发件人：${esc(message.from || '未知')} · 收件时间：${esc(message.received_at || message.created_at || '未知')}</div>
+              <pre>${esc(message.body || '（无正文）')}</pre>
+            </article>`).join('')
+          : '<p class="muted">暂无已同步邮件</p>';
+      } catch (err) {
+        $('mailboxMessagesInfo').textContent = '读取邮件失败';
+        $('mailboxMessagesList').innerHTML = `<p class="muted">${esc(err.message)}</p>`;
+      }
+    }
+
+    function closeMailboxMessages(event) {
+      if (event && event.target !== $('mailboxMessagesModal')) return;
+      $('mailboxMessagesModal').classList.remove('show');
     }
 
     async function cleanRemoteMailbox(id) {

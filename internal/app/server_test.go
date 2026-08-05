@@ -5985,6 +5985,44 @@ func TestSyncMailboxUsesMailboxAccountSession(t *testing.T) {
 	}
 }
 
+func TestListMailboxMessagesReturnsAllMailboxMessages(t *testing.T) {
+	store := newTestStore(t)
+	handler := NewServer(Config{}, store, discardLogger())
+	cookie, _ := registerTestUser(t, handler, "mail-list", "multi123")
+	mailbox := createTestMailboxWithCookie(t, handler, cookie, "MAIL", "mail-list@example.icloud.com")
+
+	for _, message := range []struct {
+		subject string
+		from    string
+		body    string
+	}{
+		{subject: "First", from: "first@example.com", body: "First message"},
+		{subject: "Second", from: "second@example.com", body: "Second message"},
+	} {
+		if _, err := store.AddMessage(mailbox.ID, message.subject, message.from, message.body, time.Now()); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/mailboxes/"+url.PathEscape(mailbox.ID)+"/messages", nil)
+	req.AddCookie(cookie)
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("list messages = %d body=%s", rr.Code, rr.Body.String())
+	}
+	var body struct {
+		Success  bool            `json:"success"`
+		Messages []publicMessage `json:"messages"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if !body.Success || len(body.Messages) != 2 || body.Messages[1].Body != "Second message" {
+		t.Fatalf("messages = %+v, want both mailbox messages", body.Messages)
+	}
+}
+
 func newTestStore(t *testing.T) *FileStore {
 	t.Helper()
 	store, err := NewFileStore(filepath.Join(t.TempDir(), "state.json"))
