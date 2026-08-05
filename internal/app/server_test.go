@@ -36,6 +36,7 @@ func TestExtractOTP(t *testing.T) {
 		{name: "openai subject", text: "Your OpenAI code is 123456", want: "123456"},
 		{name: "chinese", text: "验证码：654321，请勿泄露", want: "654321"},
 		{name: "fallback", text: "Use 246810 to continue.", want: "246810"},
+		{name: "HTML styles", text: "ChatGPT の一時的な認証コード\n<style>.x{color:#202123}</style><script>const id = 353740</script><p>認証コード：719348</p>", want: "719348"},
 		{name: "zero invalid", text: "code 000000", want: ""},
 	}
 	for _, tt := range tests {

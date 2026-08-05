@@ -4744,11 +4744,13 @@ func parseAfter(value string) (time.Time, error) {
 }
 
 var (
-	contextOTPRegex = regexp.MustCompile(`(?i)(?:openai|chatgpt|otp|code|verification|验证码|验证|代码)[^\d]{0,80}(\d{6})`)
-	plainOTPRegex   = regexp.MustCompile(`\b(\d{6})\b`)
+	htmlHiddenContentRegex = regexp.MustCompile(`(?is)<(?:style|script)\b[^>]*>.*?</(?:style|script)\s*>`)
+	contextOTPRegex        = regexp.MustCompile(`(?i)(?:openai|chatgpt|otp|code|verification|验证码|验证|代码)[^\d]{0,80}(\d{6})`)
+	plainOTPRegex          = regexp.MustCompile(`\b(\d{6})\b`)
 )
 
 func extractOTP(text string) string {
+	text = htmlTagRegex.ReplaceAllString(htmlHiddenContentRegex.ReplaceAllString(text, " "), " ")
 	if matches := contextOTPRegex.FindStringSubmatch(text); len(matches) == 2 && validOTP(matches[1]) {
 		return matches[1]
 	}
