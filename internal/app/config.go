@@ -3,6 +3,7 @@ package app
 import (
 	"encoding/json"
 	"errors"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -60,12 +61,12 @@ func LoadConfig(path string) (Config, error) {
 		UpdateAssetName:              strings.TrimSpace(os.Getenv("IPM_UPDATE_ASSET_NAME")),
 	}
 	if path == "" {
-		return cfg, nil
+		return validateConfig(cfg)
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return cfg, nil
+			return validateConfig(cfg)
 		}
 		return Config{}, err
 	}
@@ -152,6 +153,20 @@ func LoadConfig(path string) (Config, error) {
 	if strings.TrimSpace(fromFile.UpdateAssetName) != "" {
 		cfg.UpdateAssetName = strings.TrimSpace(fromFile.UpdateAssetName)
 	}
+	return validateConfig(cfg)
+}
+
+func validateConfig(cfg Config) (Config, error) {
+	value := strings.TrimRight(strings.TrimSpace(cfg.PublicBaseURL), "/")
+	if value == "" {
+		cfg.PublicBaseURL = ""
+		return cfg, nil
+	}
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		return Config{}, errors.New("public_base_url must be an absolute http or https URL")
+	}
+	cfg.PublicBaseURL = value
 	return cfg, nil
 }
 

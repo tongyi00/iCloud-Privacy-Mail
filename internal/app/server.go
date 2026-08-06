@@ -2110,6 +2110,10 @@ func (s *Server) handleListMailboxes(w http.ResponseWriter, r *http.Request) {
 	sortMailboxesForList(filtered, accountsByID)
 
 	page, pageSize, paged := mailboxListPagination(r)
+	pages := totalPages(len(filtered), pageSize)
+	if page > pages {
+		page = pages
+	}
 	pageRows := filtered
 	if paged {
 		pageRows = paginateMailboxes(filtered, page, pageSize)
@@ -2127,7 +2131,7 @@ func (s *Server) handleListMailboxes(w http.ResponseWriter, r *http.Request) {
 			PageSize:   pageSize,
 			Total:      len(filtered),
 			TotalAll:   len(base),
-			TotalPages: totalPages(len(filtered), pageSize),
+			TotalPages: pages,
 		},
 	}
 	writeJSON(w, http.StatusOK, response)
@@ -4062,6 +4066,9 @@ func (s *Server) logICloudCreateError(ownerID string, err error) {
 }
 
 func (s *Server) authorized(r *http.Request, mailbox Mailbox) bool {
+	if _, _, ok := s.currentWebSession(r); ok && s.canAccessMailbox(r, mailbox) {
+		return true
+	}
 	queryKey := strings.TrimSpace(r.URL.Query().Get("key"))
 	if constantTimeEqual(queryKey, mailbox.APIToken) {
 		return true
@@ -4772,8 +4779,11 @@ func (s *Server) publicMailbox(r *http.Request, mailbox Mailbox) publicMailbox {
 }
 
 func (s *Server) mailboxAPIURL(r *http.Request, mailbox Mailbox) string {
-	baseURL := firstNonEmpty(s.cfg.PublicBaseURL, requestBaseURL(r))
-	return fmt.Sprintf("%s/api/v1/mailboxes/%s/code?key=%s", strings.TrimRight(baseURL, "/"), url.PathEscape(mailbox.Email), url.QueryEscape(mailbox.APIToken))
+	path := fmt.Sprintf("/api/v1/mailboxes/%s/code?key=%s", url.PathEscape(mailbox.Email), url.QueryEscape(mailbox.APIToken))
+	if baseURL := strings.TrimRight(strings.TrimSpace(s.cfg.PublicBaseURL), "/"); baseURL != "" {
+		return baseURL + path
+	}
+	return path
 }
 
 func (s *Server) publicSession(session *ICloudSession) publicICloudSession {

@@ -1214,9 +1214,9 @@
             </label>
           </div>
           <div class="toolbar">
-            <button class="primary" onclick="startAppleAccountLogin()">新接口登录</button>
+            <button id="appleAccountLoginButton" class="primary" onclick="startAppleAccountLogin()">新接口登录</button>
             <button id="appleAccount2FAButton" onclick="submitAppleAccount2FA()">提交新接口验证码</button>
-            <button onclick="startProtocolLogin()">旧接口登录</button>
+            <button id="protocolLoginButton" onclick="startProtocolLogin()">旧接口登录</button>
             <button id="protocol2FAButton" onclick="submitProtocol2FA()">提交旧接口验证码</button>
             <button type="button" onclick="saveCreateSettings()">保存配置</button>
             <button id="sessionCheckButton" onclick="checkICloudSession()">检测登录态</button>
@@ -1404,6 +1404,7 @@
     let mailboxSearchTimer = null;
     const mailboxCodeResults = new Map();
     const mailboxSyncResults = new Map();
+    const mailboxMutationInFlight = new Set();
     let activeMailboxCopyMenuID = '';
     let activeICloudSessionKey = '';
     let protocolPendingID = '';
@@ -2306,6 +2307,8 @@
     }
 
     async function startMailboxScheduler() {
+    const button = $('startScheduleButton');
+    if (startMailboxScheduler.inFlight || button.disabled) return;
       let accountIDs;
       let accountNames;
       try {
@@ -2325,16 +2328,44 @@
         interval_minutes: boundedInt('scheduleIntervalMinutes', 60, 1, 1440),
         round_interval_seconds: boundedInt('scheduleRoundIntervalSeconds', 5, 1, 600)
       };
-      const data = await api('/api/icloud/scheduler/start', {method:'POST', body: JSON.stringify(payload)});
-      renderMailboxScheduler(data.scheduler || {});
-      ensureSchedulerPolling();
-      log(`定时创建已启动：${createChannelLabel(payload.create_channel)}，每 ${payload.interval_minutes} 分钟开始一次；每轮创建间隔 ${payload.round_interval_seconds} 秒；失败账号本轮临时跳过，其他账号继续创建；参与账号=${accountNames}`);
+    let succeeded = false;
+    startMailboxScheduler.inFlight = true;
+    button.disabled = true;
+    if ($('scheduleStatus')) $('scheduleStatus').textContent = '正在启动定时创建...';
+    try {
+    const data = await api('/api/icloud/scheduler/start', {method:'POST', body: JSON.stringify(payload)});
+    renderMailboxScheduler(data.scheduler || {});
+    ensureSchedulerPolling();
+    log(`定时创建已启动：${createChannelLabel(payload.create_channel)}，每 ${payload.interval_minutes} 分钟开始一次；每轮创建间隔 ${payload.round_interval_seconds} 秒；失败账号本轮临时跳过，其他账号继续创建；参与账号=${accountNames}`);
+    succeeded = true;
+    } catch (err) {
+    if ($('scheduleStatus')) $('scheduleStatus').textContent = '定时创建启动失败：' + err.message;
+    log('定时创建启动失败：' + err.message);
+    } finally {
+    startMailboxScheduler.inFlight = false;
+    if (!succeeded) button.disabled = false;
+    }
     }
 
     async function stopMailboxScheduler() {
-      const data = await api('/api/icloud/scheduler/stop', {method:'POST', body:'{}'});
-      renderMailboxScheduler(data.scheduler || {});
-      log('定时创建已停止');
+    const button = $('stopScheduleButton');
+    if (stopMailboxScheduler.inFlight || button.disabled) return;
+    let succeeded = false;
+    stopMailboxScheduler.inFlight = true;
+    button.disabled = true;
+    if ($('scheduleStatus')) $('scheduleStatus').textContent = '正在停止定时创建...';
+    try {
+    const data = await api('/api/icloud/scheduler/stop', {method:'POST', body:'{}'});
+    renderMailboxScheduler(data.scheduler || {});
+    log('定时创建已停止');
+    succeeded = true;
+    } catch (err) {
+    if ($('scheduleStatus')) $('scheduleStatus').textContent = '定时创建停止失败：' + err.message;
+    log('定时创建停止失败：' + err.message);
+    } finally {
+    stopMailboxScheduler.inFlight = false;
+    if (!succeeded) button.disabled = false;
+    }
     }
 
     async function copyScheduleEvents() {
@@ -2552,6 +2583,7 @@
       let lastGroup = '';
       $('mailboxes').innerHTML = rows.map(row => {
         const group = mailboxAccountTitle(row);
+    const mailboxBusy = mailboxMutationInFlight.has(row.id);
         const groupRow = group !== lastGroup
           ? `<tr class="account-group"><td colspan="6">Apple 账号：${esc(group)}</td></tr>`
           : '';
@@ -2576,15 +2608,15 @@
               <button class="${syncButtonClass(row.id)}" onclick="syncMailbox('${row.id}')" ${syncButtonDisabled(row.id)}>${syncButtonText(row.id)}</button>
               <button onclick="showMailboxMessages('${row.id}')">显示邮件</button>
               <button onclick="cleanRemoteMailbox('${row.id}')" title="把本地已同步过的远端邮件移到废纸篓，并清空当前 iCloud 废纸篓">删除邮件</button>
-              <select onchange="setMailboxStatus('${row.id}', this.value)">
+              <select onchange="setMailboxStatus('${row.id}', this.value, this)" ${mailboxBusy ? 'disabled' : ''}>
                 <option value="">改状态</option>
                 <option value="available">可用</option>
                 <option value="used">已使用</option>
                 <option value="failed">失败</option>
                 <option value="disabled">停用</option>
               </select>
-              <button onclick="disableMailbox('${row.id}')">停用 API</button>
-              <button class="danger" onclick="deleteMailbox('${row.id}')">删除 API</button>
+              <button onclick="disableMailbox('${row.id}', this)" ${mailboxBusy ? 'disabled' : ''}>停用 API</button>
+              <button class="danger" onclick="deleteMailbox('${row.id}', this)" ${mailboxBusy ? 'disabled' : ''}>删除 API</button>
             </div>
             </td>
           </tr>`;
@@ -2818,26 +2850,41 @@
     }
 
     async function startProtocolLogin() {
+    const button = $('protocolLoginButton');
+    if (startProtocolLogin.inFlight || button.disabled) return;
       const appleId = $('protocolAppleId').value.trim();
-      const data = await api('/api/icloud/protocol-login/start', {method:'POST', body: JSON.stringify({
-        apple_id: appleId,
-        password: $('protocolPassword').value,
-        two_factor_method: twoFactorMethodPayloadValue('iCloudWeb2FAMethod')
-      })});
-      $('protocolPassword').value = '';
-      if (data.needs_2fa) {
-        protocolPendingID = data.pending_id || '';
-        log(`${data.message || '需要 2FA'}：${data.apple_id || appleId}，有效期 ${data.expires_at || '-'}`);
-        $('icloudSessionInfo').textContent = `${data.message || '需要 2FA'}\n账号：${data.apple_id || appleId}\n有效期：${data.expires_at || '-'}`;
-        return;
-      }
-      renderICloudSession(data.session);
-      if (data.sessions) renderICloudSessions(data.sessions);
-      log('旧接口登录态已保存：' + (data.session.apple_id || appleId));
-      await refresh();
+    startProtocolLogin.inFlight = true;
+    button.disabled = true;
+    $('icloudSessionInfo').textContent = '正在登录旧接口...';
+    try {
+    const data = await api('/api/icloud/protocol-login/start', {method:'POST', body: JSON.stringify({
+      apple_id: appleId,
+      password: $('protocolPassword').value,
+      two_factor_method: twoFactorMethodPayloadValue('iCloudWeb2FAMethod')
+    })});
+    $('protocolPassword').value = '';
+    if (data.needs_2fa) {
+      protocolPendingID = data.pending_id || '';
+      log(`${data.message || '需要 2FA'}：${data.apple_id || appleId}，有效期 ${data.expires_at || '-'}`);
+      $('icloudSessionInfo').textContent = `${data.message || '需要 2FA'}\n账号：${data.apple_id || appleId}\n有效期：${data.expires_at || '-'}`;
+      return;
+    }
+    renderICloudSession(data.session);
+    if (data.sessions) renderICloudSessions(data.sessions);
+    log('旧接口登录态已保存：' + (data.session.apple_id || appleId));
+    await refresh();
+    } catch (err) {
+    $('icloudSessionInfo').textContent = '旧接口登录失败：' + err.message;
+    log('旧接口登录失败：' + err.message);
+    } finally {
+    startProtocolLogin.inFlight = false;
+    button.disabled = false;
+    }
     }
 
     async function submitProtocol2FA() {
+    const button = $('protocol2FAButton');
+    if (submitProtocol2FA.inFlight || button.disabled) return;
       if (!protocolPendingID) {
         log('没有待验证的旧接口登录，请先点击“旧接口登录”');
         $('icloudSessionInfo').textContent = '没有待验证的旧接口登录，请先点击“旧接口登录”。';
@@ -2849,8 +2896,8 @@
         $('icloudSessionInfo').textContent = '旧接口验证码提交失败：请输入 6 位验证码。';
         return;
       }
-      const button = $('protocol2FAButton');
       const pendingID = protocolPendingID;
+    submitProtocol2FA.inFlight = true;
       button.disabled = true;
       $('icloudSessionInfo').textContent = '已提交旧接口验证码，正在验证并保存登录态...';
       log('已提交旧接口验证码，正在验证并保存登录态');
@@ -2869,31 +2916,47 @@
         log('旧接口验证码提交失败：' + err.message);
         $('icloudSessionInfo').textContent = '旧接口验证码提交失败：' + err.message;
       } finally {
+    submitProtocol2FA.inFlight = false;
         button.disabled = false;
       }
     }
 
     async function startAppleAccountLogin() {
+    const button = $('appleAccountLoginButton');
+    if (startAppleAccountLogin.inFlight || button.disabled) return;
       const appleId = $('protocolAppleId').value.trim();
-      const data = await api('/api/apple-account/login/start', {method:'POST', body: JSON.stringify({
-        apple_id: appleId,
-        password: $('protocolPassword').value,
-        two_factor_method: twoFactorMethodPayloadValue('appleAccount2FAMethod')
-      })});
-      $('protocolPassword').value = '';
-      if (data.needs_2fa) {
-        appleAccountPendingID = data.pending_id || '';
-        log(`${data.message || '新接口需要 2FA'}：${data.apple_id || appleId}，有效期 ${data.expires_at || '-'}`);
-        $('icloudSessionInfo').textContent = `${data.message || '新接口需要 2FA'}\n账号：${data.apple_id || appleId}\n有效期：${data.expires_at || '-'}`;
-        return;
-      }
-      renderICloudSession(data.session);
-      if (data.sessions) renderICloudSessions(data.sessions);
-      log('新接口登录态已保存：' + (data.session.apple_id || appleId));
-      await refresh();
+    startAppleAccountLogin.inFlight = true;
+    button.disabled = true;
+    $('icloudSessionInfo').textContent = '正在登录新接口...';
+    try {
+    const data = await api('/api/apple-account/login/start', {method:'POST', body: JSON.stringify({
+      apple_id: appleId,
+      password: $('protocolPassword').value,
+      two_factor_method: twoFactorMethodPayloadValue('appleAccount2FAMethod')
+    })});
+    $('protocolPassword').value = '';
+    if (data.needs_2fa) {
+      appleAccountPendingID = data.pending_id || '';
+      log(`${data.message || '新接口需要 2FA'}：${data.apple_id || appleId}，有效期 ${data.expires_at || '-'}`);
+      $('icloudSessionInfo').textContent = `${data.message || '新接口需要 2FA'}\n账号：${data.apple_id || appleId}\n有效期：${data.expires_at || '-'}`;
+      return;
+    }
+    renderICloudSession(data.session);
+    if (data.sessions) renderICloudSessions(data.sessions);
+    log('新接口登录态已保存：' + (data.session.apple_id || appleId));
+    await refresh();
+    } catch (err) {
+    $('icloudSessionInfo').textContent = '新接口登录失败：' + err.message;
+    log('新接口登录失败：' + err.message);
+    } finally {
+    startAppleAccountLogin.inFlight = false;
+    button.disabled = false;
+    }
     }
 
     async function submitAppleAccount2FA() {
+    const button = $('appleAccount2FAButton');
+    if (submitAppleAccount2FA.inFlight || button.disabled) return;
       if (!appleAccountPendingID) {
         log('没有待验证的新接口登录，请先点击“新接口登录”');
         $('icloudSessionInfo').textContent = '没有待验证的新接口登录，请先点击“新接口登录”。';
@@ -2905,8 +2968,8 @@
         $('icloudSessionInfo').textContent = '新接口验证码提交失败：请输入 6 位验证码。';
         return;
       }
-      const button = $('appleAccount2FAButton');
       const pendingID = appleAccountPendingID;
+    submitAppleAccount2FA.inFlight = true;
       button.disabled = true;
       $('icloudSessionInfo').textContent = '已提交新接口验证码，正在验证并保存登录态...';
       log('已提交新接口验证码，正在验证并保存登录态');
@@ -2925,6 +2988,7 @@
         log('新接口验证码提交失败：' + err.message);
         $('icloudSessionInfo').textContent = '新接口验证码提交失败：' + err.message;
       } finally {
+    submitAppleAccount2FA.inFlight = false;
         button.disabled = false;
       }
     }
@@ -3014,7 +3078,7 @@
       mailboxCodeResults.set(id, {email: row.email, loading: true});
       renderMailboxes();
       try {
-        const url = mailboxCodeURL(row, {
+        const url = panelMailboxCodeURL(row, {
           waitMs: 12000,
           peek: true
         });
@@ -3033,6 +3097,15 @@
       } finally {
         renderMailboxes();
       }
+    }
+
+    function panelMailboxCodeURL(row, options = {}) {
+      const url = new URL(`/api/mailboxes/${encodeURIComponent(row.id)}/code`, location.origin);
+      url.searchParams.set('keyword', options.keyword || 'ChatGPT');
+      if (options.waitMs) url.searchParams.set('wait_ms', String(options.waitMs));
+      if (options.after) url.searchParams.set('after', options.after);
+      if (options.peek) url.searchParams.set('peek', '1');
+      return url;
     }
 
     function mailboxCodeURL(row, options = {}) {
@@ -3141,27 +3214,64 @@
       }
     }
 
-    async function setMailboxStatus(id, status) {
-      if (!status) return;
+    async function setMailboxStatus(id, status, control) {
+    if (!status || mailboxMutationInFlight.has(id) || (control && control.disabled)) return;
       const apiActive = status === 'disabled' ? false : undefined;
       const payload = {status, note: '面板手动改状态'};
       if (apiActive !== undefined) payload.api_active = apiActive;
-      await api(`/api/mailboxes/${encodeURIComponent(id)}/status`, {method:'POST', body: JSON.stringify(payload)});
-      log(`状态已更新：${id} -> ${status}`);
-      await refresh();
+    mailboxMutationInFlight.add(id);
+    if (control) control.disabled = true;
+    renderMailboxes();
+    try {
+    await api(`/api/mailboxes/${encodeURIComponent(id)}/status`, {method:'POST', body: JSON.stringify(payload)});
+    log(`状态已更新：${id} -> ${status}`);
+    await refresh();
+    } catch (err) {
+    log('状态更新失败：' + err.message);
+    } finally {
+    mailboxMutationInFlight.delete(id);
+    if (control) {
+      control.disabled = false;
+      control.value = '';
+    }
+    renderMailboxes();
+    }
     }
 
-    async function disableMailbox(id) {
-      await api(`/api/mailboxes/${encodeURIComponent(id)}/disable`, {method:'POST', body:'{}'});
-      log('已停用：' + id);
-      await refresh();
+    async function disableMailbox(id, button) {
+    if (mailboxMutationInFlight.has(id) || (button && button.disabled)) return;
+    mailboxMutationInFlight.add(id);
+    if (button) button.disabled = true;
+    renderMailboxes();
+    try {
+    await api(`/api/mailboxes/${encodeURIComponent(id)}/disable`, {method:'POST', body:'{}'});
+    log('已停用：' + id);
+    await refresh();
+    } catch (err) {
+    log('停用失败：' + err.message);
+    } finally {
+    mailboxMutationInFlight.delete(id);
+    if (button) button.disabled = false;
+    renderMailboxes();
+    }
     }
 
-    async function deleteMailbox(id) {
-      if (!confirm('确认删除这个 API 绑定？')) return;
-      await api(`/api/mailboxes/${encodeURIComponent(id)}`, {method:'DELETE'});
-      log('已删除：' + id);
-      await refresh();
+    async function deleteMailbox(id, button) {
+    if (mailboxMutationInFlight.has(id) || (button && button.disabled) || !confirm('确认删除这个 API 绑定？')) return;
+    mailboxMutationInFlight.add(id);
+    if (button) button.disabled = true;
+    renderMailboxes();
+    try {
+    await api(`/api/mailboxes/${encodeURIComponent(id)}`, {method:'DELETE'});
+    log('已删除：' + id);
+    await refresh();
+    } catch (err) {
+    log('删除失败：' + err.message);
+    } finally {
+    mailboxMutationInFlight.delete(id);
+    if (button) button.disabled = false;
+    renderMailboxes();
+    }
     }
 
     async function copyMailboxValue(id, mode) {
