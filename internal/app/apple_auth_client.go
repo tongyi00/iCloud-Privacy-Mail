@@ -24,7 +24,6 @@ const (
 	defaultAppleOAuthClientID       = "d39ba9916b7251055b22c7f910e2ea796ee65e98b2ddecea8f5dde8d9d1a815d"
 	appleAccountManageOAuthClientID = "af1139274f266b22b68c2a3e7ad932cb3c0bbe854e13a79af78dcc73136882c3"
 	appleHashcashMaxBits            = 24
-	appleHashcashMaxAttempts        = 1 << 24
 )
 
 const (
@@ -675,7 +674,7 @@ func (c *AppleAuthClient) authSRP(ctx context.Context, session *appleAuthSession
 	headers := session.srpHeaders()
 	if session.isAppleAccountManage() {
 		bits, challenge := session.completeHashcashChallenge()
-		hc, err := generateAppleHashcash(bits, challenge, time.Now())
+		hc, err := generateAppleHashcash(ctx, bits, challenge, time.Now())
 		if err != nil {
 			return false, err
 		}
@@ -688,7 +687,7 @@ func (c *AppleAuthClient) authSRP(ctx context.Context, session *appleAuthSession
 	return status == http.StatusConflict, err
 }
 
-func generateAppleHashcash(bits int, challenge string, now time.Time) (string, error) {
+func generateAppleHashcash(ctx context.Context, bits int, challenge string, now time.Time) (string, error) {
 	challenge = strings.TrimSpace(challenge)
 	if bits <= 0 || challenge == "" {
 		return "", errCode("apple_hc_missing", "Apple Account 缺少动态验证挑战，请重新协议登录", true)
@@ -697,14 +696,18 @@ func generateAppleHashcash(bits int, challenge string, now time.Time) (string, e
 		return "", errCode("apple_hc_too_hard", "Apple Account 动态验证难度过高，请稍后重试", true)
 	}
 	prefix := fmt.Sprintf("1:%d:%s:%s::", bits, now.UTC().Format("20060102150405"), challenge)
-	for counter := int64(0); counter < appleHashcashMaxAttempts; counter++ {
+	for counter := int64(0); ; counter++ {
+		if counter%4096 == 0 {
+			if err := ctx.Err(); err != nil {
+				return "", errCode("apple_hc_canceled", "Apple Account 动态验证生成已取消，请稍后重试", true)
+			}
+		}
 		value := prefix + strconv.FormatInt(counter, 36)
 		sum := sha1.Sum([]byte(value))
 		if leadingZeroBits(sum[:]) >= bits {
 			return value, nil
 		}
 	}
-	return "", errCode("apple_hc_failed", "Apple Account 动态验证生成失败，请稍后重试", true)
 }
 
 func leadingZeroBits(data []byte) int {

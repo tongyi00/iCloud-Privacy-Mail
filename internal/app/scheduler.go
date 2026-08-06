@@ -173,7 +173,12 @@ func (s *Server) handleStartMailboxScheduler(w http.ResponseWriter, r *http.Requ
 		}
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ownerCtx, releaseOwner, err := s.acquireOwnerRuntime(s.rootCtx, ownerID)
+	if err != nil {
+		writeError(w, http.StatusConflict, err)
+		return
+	}
+	ctx, cancel := context.WithCancel(ownerCtx)
 	job := &mailboxSchedulerJob{
 		cancel: cancel,
 		state: mailboxSchedulerState{
@@ -198,13 +203,27 @@ func (s *Server) handleStartMailboxScheduler(w http.ResponseWriter, r *http.Requ
 	if old := s.mailboxSchedulers[ownerID]; old != nil && old.running() {
 		s.schedulerMu.Unlock()
 		cancel()
+		releaseOwner()
 		writeError(w, http.StatusConflict, errCode("scheduler_running", "定时创建已经在运行，请先停止后再启动", false))
 		return
 	}
 	s.mailboxSchedulers[ownerID] = job
 	s.schedulerMu.Unlock()
 
-	go s.runMailboxScheduler(ctx, ownerID, job, cfg)
+	if !s.startBackground(func(context.Context) {
+		defer releaseOwner()
+		s.runMailboxScheduler(ctx, ownerID, job, cfg)
+	}) {
+		cancel()
+		releaseOwner()
+		s.schedulerMu.Lock()
+		if s.mailboxSchedulers[ownerID] == job {
+			delete(s.mailboxSchedulers, ownerID)
+		}
+		s.schedulerMu.Unlock()
+		writeError(w, http.StatusServiceUnavailable, errCode("server_shutting_down", "服务正在关闭", true))
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"success":   true,
 		"scheduler": s.publicMailboxScheduler(r),
@@ -672,6 +691,24 @@ func (s *Server) mailboxScheduler(ownerID string) *mailboxSchedulerJob {
 	s.schedulerMu.Lock()
 	defer s.schedulerMu.Unlock()
 	return s.mailboxSchedulers[strings.TrimSpace(ownerID)]
+}
+
+func (s *Server) stopOwnerScheduler(ownerID, message string) {
+	if job := s.mailboxScheduler(ownerID); job != nil {
+		job.stop(message)
+	}
+}
+
+func (s *Server) stopAllSchedulers(message string) {
+	s.schedulerMu.Lock()
+	jobs := make([]*mailboxSchedulerJob, 0, len(s.mailboxSchedulers))
+	for _, job := range s.mailboxSchedulers {
+		jobs = append(jobs, job)
+	}
+	s.schedulerMu.Unlock()
+	for _, job := range jobs {
+		job.stop(message)
+	}
 }
 
 func (s *Server) publicMailboxScheduler(r *http.Request) publicMailboxScheduler {

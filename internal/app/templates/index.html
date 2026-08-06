@@ -1600,7 +1600,7 @@
       }
       badge.title = updateTooltip(status);
       if (button) {
-        const canUpdate = currentUser && currentUser.is_admin && status.update_available && status.asset_available && !status.error;
+        const canUpdate = currentUser && currentUser.is_admin && status.update_available && status.apply_available && !status.error;
         button.hidden = !canUpdate;
         button.disabled = !canUpdate;
         button.title = canUpdate ? '下载最新版本并重启服务' : updateTooltip(status);

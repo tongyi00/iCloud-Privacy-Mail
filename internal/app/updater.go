@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -34,6 +35,7 @@ type publicUpdateStatus struct {
 	PublishedAt     string            `json:"published_at,omitempty"`
 	AssetName       string            `json:"asset_name,omitempty"`
 	AssetAvailable  bool              `json:"asset_available"`
+	ApplyAvailable  bool              `json:"apply_available"`
 	UpdateAvailable bool              `json:"update_available"`
 	CheckedAt       string            `json:"checked_at,omitempty"`
 	Error           string            `json:"error,omitempty"`
@@ -169,10 +171,12 @@ func (s *Server) fetchManifestUpdateCandidate(ctx context.Context, manifestURL s
 	if ok {
 		status.AssetName = strings.TrimSpace(asset.Name)
 	}
+	sha := normalizeSHA256(asset.SHA256)
+	status.ApplyAvailable = ok && sha != "" && !isArchiveAssetName(asset.Name)
 	return updateCandidate{
 		Status:      status,
 		DownloadURL: strings.TrimSpace(asset.URL),
-		SHA256:      strings.ToLower(strings.TrimSpace(asset.SHA256)),
+		SHA256:      sha,
 	}, nil
 }
 
@@ -206,9 +210,15 @@ func (s *Server) fetchGitHubReleaseUpdateCandidate(ctx context.Context, status p
 	if ok {
 		status.AssetName = strings.TrimSpace(asset.Name)
 	}
+	sha := ""
+	if ok {
+		sha = s.githubReleaseAssetChecksum(ctx, asset, release.Assets)
+	}
+	status.ApplyAvailable = ok && sha != "" && !isArchiveAssetName(asset.Name)
 	return updateCandidate{
 		Status:      status,
 		DownloadURL: strings.TrimSpace(asset.BrowserDownloadURL),
+		SHA256:      sha,
 	}, nil
 }
 
@@ -284,6 +294,9 @@ func (s *Server) applyUpdate(ctx context.Context) (publicUpdateStatus, error) {
 	if isArchiveAssetName(candidate.Status.AssetName) {
 		return candidate.Status, errCode("update_asset_unsupported", "最新版本匹配到的是压缩包，在线更新需要发布裸二进制文件", false)
 	}
+	if !candidate.Status.ApplyAvailable || normalizeSHA256(candidate.SHA256) == "" {
+		return candidate.Status, errCode("update_checksum_missing", "更新资产缺少可信 SHA-256，已禁用一键更新", false)
+	}
 	exePath, err := os.Executable()
 	if err != nil {
 		return candidate.Status, fmt.Errorf("读取当前程序路径失败：%w", err)
@@ -324,6 +337,92 @@ func getJSON(ctx context.Context, url string, out any) error {
 	return json.NewDecoder(io.LimitReader(res.Body, 4<<20)).Decode(out)
 }
 
+func getText(ctx context.Context, rawURL string, limit int64) (string, error) {
+	reqCtx, cancel := context.WithTimeout(ctx, updateHTTPTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, rawURL, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("User-Agent", "iCloud-Privacy-Mail-Updater/"+AppVersion)
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer res.Body.Close()
+	if res.StatusCode < 200 || res.StatusCode >= 300 {
+		return "", fmt.Errorf("HTTP %d", res.StatusCode)
+	}
+	data, err := io.ReadAll(io.LimitReader(res.Body, limit+1))
+	if err != nil {
+		return "", err
+	}
+	if int64(len(data)) > limit {
+		return "", errors.New("checksum file too large")
+	}
+	return string(data), nil
+}
+
+func (s *Server) githubReleaseAssetChecksum(ctx context.Context, asset githubReleaseAsset, assets []githubReleaseAsset) string {
+	load := func(candidate githubReleaseAsset, allowBare bool) string {
+		url := strings.TrimSpace(candidate.BrowserDownloadURL)
+		if url == "" {
+			return ""
+		}
+		text, err := getText(ctx, url, 1<<20)
+		if err != nil {
+			return ""
+		}
+		return checksumForAsset(text, asset.Name, allowBare)
+	}
+	for _, candidate := range assets {
+		if strings.EqualFold(strings.TrimSpace(candidate.Name), strings.TrimSpace(asset.Name)+".sha256") {
+			return load(candidate, true)
+		}
+	}
+	for _, candidate := range assets {
+		name := strings.ToLower(strings.TrimSpace(candidate.Name))
+		if strings.HasSuffix(name, ".sha256") || (!strings.Contains(name, "checksum") && !strings.Contains(name, "sha256")) {
+			continue
+		}
+		if sha := load(candidate, false); sha != "" {
+			return sha
+		}
+	}
+	return ""
+}
+
+func checksumForAsset(text, assetName string, allowBare bool) string {
+	assetName = strings.TrimSpace(assetName)
+	for _, line := range strings.Split(text, "\n") {
+		fields := strings.Fields(strings.TrimSpace(line))
+		if allowBare && len(fields) == 1 {
+			if sha := normalizeSHA256(fields[0]); sha != "" {
+				return sha
+			}
+			continue
+		}
+		if len(fields) < 2 || strings.TrimPrefix(fields[1], "*") != assetName {
+			continue
+		}
+		if sha := normalizeSHA256(fields[0]); sha != "" {
+			return sha
+		}
+	}
+	return ""
+}
+
+func normalizeSHA256(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if len(value) != sha256.Size*2 {
+		return ""
+	}
+	if _, err := hex.DecodeString(value); err != nil {
+		return ""
+	}
+	return value
+}
+
 func githubAPIURL(path string) string {
 	base := strings.TrimRight(strings.TrimSpace(updateGitHubAPIBaseURL), "/")
 	if base == "" {
@@ -355,6 +454,10 @@ func firstLine(text string) string {
 }
 
 func downloadAndReplaceExecutable(ctx context.Context, downloadURL, wantSHA256, exePath string) error {
+	wantSHA256 = normalizeSHA256(wantSHA256)
+	if wantSHA256 == "" {
+		return errCode("update_checksum_missing", "更新资产缺少可信 SHA-256，已拒绝替换", false)
+	}
 	reqCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, downloadURL, nil)
@@ -392,9 +495,10 @@ func downloadAndReplaceExecutable(ctx context.Context, downloadURL, wantSHA256, 
 	if written > updateDownloadMaxBytes {
 		return fmt.Errorf("更新文件超过 %d MB，已拒绝", updateDownloadMaxBytes>>20)
 	}
-	gotSHA256 := hex.EncodeToString(hasher.Sum(nil))
-	if wantSHA256 != "" && !strings.EqualFold(gotSHA256, wantSHA256) {
-		return fmt.Errorf("更新文件校验失败：sha256=%s", gotSHA256)
+	gotSHA256 := hasher.Sum(nil)
+	wantBytes, _ := hex.DecodeString(wantSHA256)
+	if subtle.ConstantTimeCompare(gotSHA256, wantBytes) != 1 {
+		return fmt.Errorf("更新文件校验失败：sha256=%s", hex.EncodeToString(gotSHA256))
 	}
 	if err := os.Chmod(tmpPath, 0755); err != nil {
 		return fmt.Errorf("设置更新文件权限失败：%w", err)

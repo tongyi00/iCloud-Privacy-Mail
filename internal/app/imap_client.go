@@ -42,6 +42,8 @@ type iCloudIMAPSyncResult struct {
 	MessagesByMailbox map[string][]ICloudSyncedMessage
 	LastUID           string
 	Backlog           bool
+	UIDValidity       string
+	ResetCursor       bool
 }
 
 func newICloudIMAPDialer(serverName string) tls.Dialer {
@@ -95,6 +97,20 @@ func dialICloudIMAPTLS(ctx context.Context, serverName string, port int) (net.Co
 }
 
 func dialICloudIMAPTLSIPs(ctx context.Context, serverName string, port int, ips []net.IP) (net.Conn, error) {
+	dial := func(ctx context.Context, address string) (net.Conn, error) {
+		dialer := tls.Dialer{
+			NetDialer: &net.Dialer{Timeout: 5 * time.Second},
+			Config: &tls.Config{
+				ServerName: serverName,
+				MinVersion: tls.VersionTLS12,
+			},
+		}
+		return dialer.DialContext(ctx, "tcp4", address)
+	}
+	return dialICloudIMAPTLSIPsWithDialer(ctx, serverName, port, ips, dial)
+}
+
+func dialICloudIMAPTLSIPsWithDialer(ctx context.Context, serverName string, port int, ips []net.IP, dial func(context.Context, string) (net.Conn, error)) (net.Conn, error) {
 	ips = appendUniqueIPv4(nil, ips...)
 	if len(ips) == 0 {
 		return nil, errors.New("no IPv4 addresses")
@@ -113,14 +129,13 @@ func dialICloudIMAPTLSIPs(ctx context.Context, serverName string, port int, ips 
 		go func() {
 			defer wg.Done()
 			address := net.JoinHostPort(ip.String(), strconv.Itoa(port))
-			dialer := tls.Dialer{
-				NetDialer: &net.Dialer{Timeout: 5 * time.Second},
-				Config: &tls.Config{
-					ServerName: serverName,
-					MinVersion: tls.VersionTLS12,
-				},
+			conn, err := dial(dialCtx, address)
+			if dialCtx.Err() != nil {
+				if conn != nil {
+					_ = conn.Close()
+				}
+				return
 			}
-			conn, err := dialer.DialContext(dialCtx, "tcp4", address)
 			select {
 			case results <- result{conn: conn, err: err}:
 			case <-dialCtx.Done():
@@ -135,10 +150,12 @@ func dialICloudIMAPTLSIPs(ctx context.Context, serverName string, port int, ips 
 		close(results)
 	}()
 	var errs []string
+	var winner net.Conn
 	for item := range results {
-		if item.err == nil && item.conn != nil {
+		if item.err == nil && item.conn != nil && winner == nil {
+			winner = item.conn
 			cancel()
-			return item.conn, nil
+			continue
 		}
 		if item.conn != nil {
 			_ = item.conn.Close()
@@ -146,6 +163,9 @@ func dialICloudIMAPTLSIPs(ctx context.Context, serverName string, port int, ips 
 		if item.err != nil && !errors.Is(item.err, context.Canceled) {
 			errs = append(errs, item.err.Error())
 		}
+	}
+	if winner != nil {
+		return winner, nil
 	}
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return nil, ctxErr
@@ -633,50 +653,6 @@ func SyncICloudIMAPMessages(ctx context.Context, state LoginState, mailboxes []M
 	return result.MessagesByMailbox, nil
 }
 
-func LatestICloudIMAPUID(ctx context.Context, state LoginState) (string, error) {
-	state, err := normalizeICloudIMAPState(state)
-	if err != nil {
-		return "", err
-	}
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-	conn, err := dialICloudIMAPTLS(ctx, state.IMAPHost, state.IMAPPort)
-	if err != nil {
-		return "", errCode("imap_connect_failed", "连接 iCloud IMAP 失败："+err.Error(), true)
-	}
-	defer conn.Close()
-	_ = conn.SetDeadline(time.Now().Add(30 * time.Second))
-
-	reader := bufio.NewReader(conn)
-	greeting, err := reader.ReadString('\n')
-	if err != nil {
-		return "", errCode("imap_greeting_failed", "读取 iCloud IMAP 欢迎信息失败："+err.Error(), true)
-	}
-	if !strings.Contains(strings.ToUpper(greeting), "OK") {
-		return "", errCode("imap_greeting_failed", "iCloud IMAP 未就绪："+imapResponseSummary([]string{greeting}), true)
-	}
-	loginLines, err := imapCommand(conn, reader, "A001", "LOGIN "+imapQuote(state.IMAPUsername)+" "+imapQuote(state.IMAPAppPassword))
-	if err != nil {
-		return "", errCode("imap_login_failed", "iCloud IMAP 登录请求失败："+err.Error(), true)
-	}
-	if !imapTaggedOK(loginLines, "A001") {
-		return "", errCode("imap_login_failed", "iCloud IMAP 登录失败，请确认 iCloud 邮箱账号和 App 专用密码："+imapResponseSummary(loginLines), false)
-	}
-	selectLines, err := imapCommand(conn, reader, "A002", "SELECT INBOX")
-	if err != nil {
-		return "", errCode("imap_select_failed", "打开 iCloud 收件箱失败："+err.Error(), true)
-	}
-	if !imapTaggedOK(selectLines, "A002") {
-		return "", errCode("imap_select_failed", "打开 iCloud 收件箱失败："+imapResponseSummary(selectLines), true)
-	}
-	_, _ = imapCommand(conn, reader, "A003", "LOGOUT")
-	uid := imapSelectLastUID(selectLines)
-	if uid <= 0 {
-		return "", nil
-	}
-	return strconv.Itoa(uid), nil
-}
-
 func SyncICloudIMAPMessagesWithCursor(ctx context.Context, state LoginState, mailboxes []Mailbox, after time.Time, keyword string, maxMessages int) (iCloudIMAPSyncResult, error) {
 	state, err := normalizeICloudIMAPState(state)
 	if err != nil {
@@ -726,6 +702,11 @@ func SyncICloudIMAPMessagesWithCursor(ctx context.Context, state LoginState, mai
 	if !imapTaggedOK(selectLines, "A002") {
 		return iCloudIMAPSyncResult{}, errCode("imap_select_failed", "打开 iCloud 收件箱失败："+imapResponseSummary(selectLines), true)
 	}
+	uidValidity := imapSelectUIDValidity(selectLines)
+	if uidValidity == "" {
+		return iCloudIMAPSyncResult{}, errCode("imap_uidvalidity_missing", "iCloud IMAP 未返回 UIDVALIDITY", true)
+	}
+	state, mailboxes, resetCursor := prepareIMAPGeneration(state, mailboxes, uidValidity)
 	searchLines, err := imapCommand(conn, reader, "A003", imapSearchCommand(state, mailboxes, after))
 	if err != nil {
 		return iCloudIMAPSyncResult{}, errCode("imap_search_failed", "搜索 iCloud IMAP 邮件失败："+err.Error(), true)
@@ -738,7 +719,7 @@ func SyncICloudIMAPMessagesWithCursor(ctx context.Context, state LoginState, mai
 	uids = imapUIDsAfter(uids, cursor)
 	if len(uids) == 0 {
 		_, _ = imapCommand(conn, reader, "A004", "LOGOUT")
-		return iCloudIMAPSyncResult{MessagesByMailbox: map[string][]ICloudSyncedMessage{}}, nil
+		return iCloudIMAPSyncResult{MessagesByMailbox: map[string][]ICloudSyncedMessage{}, UIDValidity: uidValidity, ResetCursor: resetCursor}, nil
 	}
 	sortInts(uids)
 	backlog := len(uids) > maxMessages
@@ -772,7 +753,25 @@ func SyncICloudIMAPMessagesWithCursor(ctx context.Context, state LoginState, mai
 		MessagesByMailbox: iCloudIMAPMessagesByMailbox(fetched, mailboxes, after, keyword, state.IMAPEmail, state.IMAPUsername),
 		LastUID:           lastUID,
 		Backlog:           backlog,
+		UIDValidity:       uidValidity,
+		ResetCursor:       resetCursor,
 	}, nil
+}
+
+func prepareIMAPGeneration(state LoginState, mailboxes []Mailbox, uidValidity string) (LoginState, []Mailbox, bool) {
+	uidValidity = strings.TrimSpace(uidValidity)
+	if uidValidity == "" || (state.IMAPUIDValidity != "" && state.IMAPUIDValidity == uidValidity) {
+		return state, mailboxes, false
+	}
+	state.IMAPUIDValidity = uidValidity
+	state.IMAPLastSyncAt = time.Time{}
+	state.IMAPLastSyncUID = ""
+	mailboxes = append([]Mailbox(nil), mailboxes...)
+	for i := range mailboxes {
+		mailboxes[i].LastSyncAt = time.Time{}
+		mailboxes[i].LastSyncUID = ""
+	}
+	return state, mailboxes, true
 }
 
 func imapLastProcessedUID(selected []int, processed map[int]struct{}) string {
@@ -814,26 +813,20 @@ func imapSearchCommand(state LoginState, mailboxes []Mailbox, after time.Time) s
 	return "UID SEARCH SINCE " + searchAfter.Format("2-Jan-2006")
 }
 
-func imapSelectLastUID(lines []string) int {
+func imapSelectUIDValidity(lines []string) string {
 	for _, line := range lines {
 		upper := strings.ToUpper(line)
-		idx := strings.Index(upper, "UIDNEXT")
+		idx := strings.Index(upper, "UIDVALIDITY")
 		if idx < 0 {
 			continue
 		}
-		tail := line[idx+len("UIDNEXT"):]
-		fields := strings.FieldsFunc(tail, func(r rune) bool {
-			return r < '0' || r > '9'
-		})
-		if len(fields) == 0 {
-			continue
-		}
-		nextUID, err := strconv.Atoi(fields[0])
-		if err == nil && nextUID > 1 {
-			return nextUID - 1
+		tail := line[idx+len("UIDVALIDITY"):]
+		fields := strings.FieldsFunc(tail, func(r rune) bool { return r < '0' || r > '9' })
+		if len(fields) > 0 {
+			return fields[0]
 		}
 	}
-	return 0
+	return ""
 }
 
 func imapUIDNumber(value string) int {

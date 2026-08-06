@@ -31,18 +31,21 @@ type DeleteUserResult struct {
 }
 
 type MailboxSyncUpdate struct {
-	MailboxID string
-	Source    string
-	Messages  []ICloudSyncedMessage
-	SyncedAt  time.Time
-	LastUID   string
+	MailboxID   string
+	Source      string
+	Messages    []ICloudSyncedMessage
+	SyncedAt    time.Time
+	LastUID     string
+	ResetCursor bool
 }
 
 type IMAPSyncCursorUpdate struct {
-	AccountID string
-	StateKey  string
-	SyncedAt  time.Time
-	LastUID   string
+	AccountID   string
+	StateKey    string
+	SyncedAt    time.Time
+	LastUID     string
+	UIDValidity string
+	ResetCursor bool
 }
 
 func NewFileStore(path string) (*FileStore, error) {
@@ -77,7 +80,9 @@ func (s *FileStore) load() error {
 		s.state.NextID = 1
 	}
 	s.committed = cloneState(s.state)
-	if s.migrateLegacyMailboxAccountIDsLocked() {
+	changed := s.migrateLegacyMailboxAccountIDsLocked()
+	changed = s.pruneExpiredWebSessionsLocked(time.Now()) || changed
+	if changed {
 		return s.saveLocked()
 	}
 	s.committed = cloneState(s.state)
@@ -243,6 +248,7 @@ func (s *FileStore) AuthenticateUserAndCreateSession(username, password string, 
 			return User{}, "", WebSession{}, errCode("user_disabled", "账号已停用", false)
 		}
 		now := time.Now()
+		s.pruneExpiredWebSessionsLocked(now)
 		current.LastLoginAt = now
 		current.UpdatedAt = now
 		session := WebSession{
@@ -375,6 +381,7 @@ func (s *FileStore) CreateWebSession(userID string, isAdmin bool, ttl time.Durat
 		return "", WebSession{}, err
 	}
 	now := time.Now()
+	s.pruneExpiredWebSessionsLocked(now)
 	session := WebSession{
 		TokenHash:  sessionTokenHash(token),
 		UserID:     userID,
@@ -414,9 +421,10 @@ func (s *FileStore) DeleteWebSession(token string) error {
 	defer s.mu.Unlock()
 
 	tokenHash := sessionTokenHash(token)
+	now := time.Now()
 	filtered := s.state.WebSessions[:0]
 	for _, session := range s.state.WebSessions {
-		if constantTimeEqual(tokenHash, session.TokenHash) {
+		if constantTimeEqual(tokenHash, session.TokenHash) || !session.ExpiresAt.After(now) {
 			continue
 		}
 		filtered = append(filtered, session)
@@ -875,7 +883,11 @@ func (s *FileStore) CommitMailboxSync(ownerID string, updates []MailboxSyncUpdat
 				created++
 			}
 		}
-		if !update.SyncedAt.IsZero() {
+		if update.ResetCursor {
+			mailbox.LastSyncAt = time.Time{}
+			mailbox.LastSyncUID = ""
+		}
+		if !update.SyncedAt.IsZero() && (!update.ResetCursor || strings.TrimSpace(update.LastUID) != "") {
 			mailbox.LastSyncAt = update.SyncedAt
 		}
 		if strings.TrimSpace(update.LastUID) != "" {
@@ -884,7 +896,7 @@ func (s *FileStore) CommitMailboxSync(ownerID string, updates []MailboxSyncUpdat
 		mailbox.UpdatedAt = time.Now()
 	}
 	if cursor != nil {
-		if err := s.setICloudIMAPSyncCursorLocked(ownerID, cursor.AccountID, cursor.StateKey, cursor.SyncedAt, cursor.LastUID); err != nil {
+		if err := s.setICloudIMAPSyncCursorLocked(ownerID, cursor.AccountID, cursor.StateKey, cursor.SyncedAt, cursor.LastUID, cursor.UIDValidity, cursor.ResetCursor); err != nil {
 			return 0, err
 		}
 	}
@@ -940,7 +952,7 @@ func (s *FileStore) SetMailboxSyncCursor(id string, syncedAt time.Time, lastUID 
 func (s *FileStore) SetICloudIMAPSyncCursor(ownerID, accountID, stateKey string, syncedAt time.Time, lastUID string) (ICloudSession, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if err := s.setICloudIMAPSyncCursorLocked(ownerID, accountID, stateKey, syncedAt, lastUID); err != nil {
+	if err := s.setICloudIMAPSyncCursorLocked(ownerID, accountID, stateKey, syncedAt, lastUID, "", false); err != nil {
 		return ICloudSession{}, err
 	}
 	if err := s.saveLocked(); err != nil {
@@ -949,7 +961,7 @@ func (s *FileStore) SetICloudIMAPSyncCursor(ownerID, accountID, stateKey string,
 	return s.iCloudSessionForOwnerAccountLocked(ownerID, accountID)
 }
 
-func (s *FileStore) setICloudIMAPSyncCursorLocked(ownerID, accountID, stateKey string, syncedAt time.Time, lastUID string) error {
+func (s *FileStore) setICloudIMAPSyncCursorLocked(ownerID, accountID, stateKey string, syncedAt time.Time, lastUID, uidValidity string, resetCursor bool) error {
 
 	ownerID = strings.TrimSpace(ownerID)
 	accountID = strings.TrimSpace(accountID)
@@ -974,9 +986,18 @@ func (s *FileStore) setICloudIMAPSyncCursorLocked(ownerID, accountID, stateKey s
 			if accountID == "" && stateKey != "" && imapStateKey(state) != stateKey {
 				continue
 			}
-			session.LoginStates[i].IMAPLastSyncAt = syncedAt
+			if resetCursor {
+				session.LoginStates[i].IMAPLastSyncAt = time.Time{}
+				session.LoginStates[i].IMAPLastSyncUID = ""
+			}
+			if !syncedAt.IsZero() && (!resetCursor || strings.TrimSpace(lastUID) != "") {
+				session.LoginStates[i].IMAPLastSyncAt = syncedAt
+			}
 			if strings.TrimSpace(lastUID) != "" {
 				session.LoginStates[i].IMAPLastSyncUID = strings.TrimSpace(lastUID)
+			}
+			if strings.TrimSpace(uidValidity) != "" {
+				session.LoginStates[i].IMAPUIDValidity = strings.TrimSpace(uidValidity)
 			}
 			return true
 		}
@@ -991,6 +1012,62 @@ func (s *FileStore) setICloudIMAPSyncCursorLocked(ownerID, accountID, stateKey s
 		}
 	}
 	return errCode("imap_session_missing", "未找到取码登录态，无法保存 IMAP 同步游标", true)
+}
+
+func (s *FileStore) UpdateICloudLoginStateForOwner(ownerID, accountID string, next LoginState) (ICloudSession, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ownerID = strings.TrimSpace(ownerID)
+	accountID = strings.TrimSpace(accountID)
+	next.Kind = strings.TrimSpace(next.Kind)
+	if next.Kind == "" {
+		return ICloudSession{}, errCode("login_state_kind_missing", "登录态类型为空", false)
+	}
+	if err := s.validateOwnerLocked(ownerID); err != nil {
+		return ICloudSession{}, err
+	}
+	update := func(session *ICloudSession) bool {
+		if session == nil || (ownerID != "" && !constantTimeEqual(ownerID, session.OwnerID)) || (accountID != "" && !constantTimeEqual(accountID, session.AccountID)) {
+			return false
+		}
+		for i := range session.LoginStates {
+			if session.LoginStates[i].Kind == next.Kind {
+				session.LoginStates[i] = next
+				return true
+			}
+		}
+		return false
+	}
+	if ownerID == "" && update(s.state.ICloudSession) {
+		if err := s.saveLocked(); err != nil {
+			return ICloudSession{}, err
+		}
+		return cloneICloudSession(*s.state.ICloudSession), nil
+	}
+	for i := range s.state.ICloudSessions {
+		if update(&s.state.ICloudSessions[i]) {
+			updated := cloneICloudSession(s.state.ICloudSessions[i])
+			if err := s.saveLocked(); err != nil {
+				return ICloudSession{}, err
+			}
+			return updated, nil
+		}
+	}
+	return ICloudSession{}, errCode("icloud_session_missing", "未找到可更新的登录态", false)
+}
+
+func (s *FileStore) pruneExpiredWebSessionsLocked(now time.Time) bool {
+	filtered := s.state.WebSessions[:0]
+	changed := false
+	for _, session := range s.state.WebSessions {
+		if !session.ExpiresAt.After(now) {
+			changed = true
+			continue
+		}
+		filtered = append(filtered, session)
+	}
+	s.state.WebSessions = filtered
+	return changed
 }
 
 func (s *FileStore) DeleteMailbox(id string) error {

@@ -49,11 +49,10 @@ func main() {
 	defer stop()
 
 	handler := app.NewServer(cfg, store, logger)
-	if panel, ok := handler.(*app.Server); ok {
+	panel, _ := handler.(*app.Server)
+	if panel != nil {
 		panel.StartMailWatcher(ctx)
 		panel.StartAppleAccountKeepAlive(ctx)
-		defer panel.StopMailWatcher()
-		defer panel.StopAppleAccountKeepAlive()
 	}
 
 	server := &http.Server{
@@ -70,7 +69,14 @@ func main() {
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		_ = server.Shutdown(shutdownCtx)
+		if panel != nil {
+			if err := panel.Shutdown(shutdownCtx); err != nil {
+				logger.Error("panel shutdown incomplete", "err", err)
+			}
+		}
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			logger.Error("http server shutdown incomplete", "err", err)
+		}
 	}()
 
 	logger.Info("iCloud Privacy Mail panel started", "addr", "http://"+server.Addr)

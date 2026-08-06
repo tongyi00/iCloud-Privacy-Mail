@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/subtle"
 	"embed"
 	"encoding/csv"
@@ -46,6 +47,7 @@ var mailboxCodeMaxClientWait = 30 * time.Second
 var iCloudMailboxListAccountTimeout = 25 * time.Second
 var mailWatcherPollInterval = 3 * time.Second
 var mailWatcherActiveTTL = 20 * time.Minute
+var ownerDrainTimeout = 30 * time.Second
 
 const (
 	defaultMailWatcherFetchLimit        = 8
@@ -95,13 +97,28 @@ type Server struct {
 	syncMailboxBatch               func(ctx context.Context, session ICloudSession, mailboxes []Mailbox, after time.Time, keyword string, maxThreads int) (map[string][]ICloudSyncedMessage, error)
 	syncCodeMailboxBatch           func(ctx context.Context, state LoginState, mailboxes []Mailbox, after time.Time, keyword string, maxMessages int) (map[string][]ICloudSyncedMessage, error)
 	syncCodeMailboxBatchWithCursor func(ctx context.Context, state LoginState, mailboxes []Mailbox, after time.Time, keyword string, maxMessages int) (iCloudIMAPSyncResult, error)
-	latestIMAPUID                  func(ctx context.Context, state LoginState) (string, error)
 	checkIMAPLogin                 func(ctx context.Context, email, appPassword string) error
+	watchIMAPExists                func(ctx context.Context, state LoginState, onExists func()) error
 	updateMu                       sync.Mutex
 	updateApplyMu                  sync.Mutex
 	updateCache                    updateCandidate
 	updateCacheAt                  time.Time
 	authLimiter                    *authRateLimiter
+	rootMu                         sync.Mutex
+	rootCtx                        context.Context
+	rootCancel                     context.CancelFunc
+	backgroundWG                   sync.WaitGroup
+	closing                        bool
+	ownerRuntimeMu                 sync.Mutex
+	ownerRuntimes                  map[string]*ownerRuntimeState
+}
+
+type ownerRuntimeState struct {
+	draining bool
+	active   int
+	idle     chan struct{}
+	ctx      context.Context
+	cancel   context.CancelFunc
 }
 
 type authRateEntry struct {
@@ -219,10 +236,12 @@ type mailboxWatcherIMAPGroup struct {
 type mailboxWatcherIdleWorker struct {
 	cancel    context.CancelFunc
 	signature string
+	done      <-chan struct{}
 }
 
 func NewServer(cfg Config, store *FileStore, logger *slog.Logger) http.Handler {
 	_ = dummyPasswordHash()
+	rootCtx, rootCancel := context.WithCancel(context.Background())
 	s := &Server{
 		cfg:                           cfg,
 		store:                         store,
@@ -249,6 +268,9 @@ func NewServer(cfg Config, store *FileStore, logger *slog.Logger) http.Handler {
 		appleAccountKeepAliveInterval: appleAccountKeepAliveDefaultInterval,
 		mailboxSchedulers:             make(map[string]*mailboxSchedulerJob),
 		authLimiter:                   &authRateLimiter{entries: make(map[string]authRateEntry)},
+		rootCtx:                       rootCtx,
+		rootCancel:                    rootCancel,
+		ownerRuntimes:                 make(map[string]*ownerRuntimeState),
 	}
 	if cfg.PublicSyncMinIntervalMS > 0 {
 		s.mailboxSyncMinInterval = time.Duration(cfg.PublicSyncMinIntervalMS) * time.Millisecond
@@ -288,11 +310,19 @@ func NewServer(cfg Config, store *FileStore, logger *slog.Logger) http.Handler {
 		return NewICloudClient().SyncMailboxMessagesBatch(ctx, session, mailboxes, after, keyword, maxThreads)
 	}
 	s.checkIMAPLogin = CheckICloudIMAPLogin
+	s.watchIMAPExists = WatchICloudIMAPExists
 	s.routes()
 	return s
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	s.rootMu.Lock()
+	closing := s.closing
+	s.rootMu.Unlock()
+	if closing {
+		writeError(w, http.StatusServiceUnavailable, errCode("server_shutting_down", "服务正在关闭", true))
+		return
+	}
 	if s.requiresAdmin(r) &&
 		!s.authorizedAdminSession(r) &&
 		!(s.allowsUserSession(r) && s.authorizedUserSession(r)) {
@@ -300,6 +330,122 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.mux.ServeHTTP(w, r)
+}
+
+func (s *Server) startBackground(run func(context.Context)) bool {
+	s.rootMu.Lock()
+	if s.closing {
+		s.rootMu.Unlock()
+		return false
+	}
+	s.backgroundWG.Add(1)
+	ctx := s.rootCtx
+	s.rootMu.Unlock()
+	go func() {
+		defer s.backgroundWG.Done()
+		run(ctx)
+	}()
+	return true
+}
+
+func (s *Server) Shutdown(ctx context.Context) error {
+	s.rootMu.Lock()
+	if !s.closing {
+		s.closing = true
+		s.rootCancel()
+	}
+	s.rootMu.Unlock()
+	s.stopAllSchedulers("服务正在关闭")
+	done := make(chan struct{})
+	go func() {
+		s.backgroundWG.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func mergeRuntimeContext(parent, runtimeCtx context.Context) (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithCancel(parent)
+	stop := context.AfterFunc(runtimeCtx, cancel)
+	return ctx, func() {
+		stop()
+		cancel()
+	}
+}
+
+func (s *Server) acquireOwnerRuntime(parent context.Context, ownerID string) (context.Context, func(), error) {
+	ownerID = strings.TrimSpace(ownerID)
+	if ownerID == "" {
+		return parent, func() {}, nil
+	}
+	s.ownerRuntimeMu.Lock()
+	state := s.ownerRuntimes[ownerID]
+	if state == nil {
+		state = &ownerRuntimeState{}
+		state.ctx, state.cancel = context.WithCancel(s.rootCtx)
+		s.ownerRuntimes[ownerID] = state
+	}
+	if state.draining {
+		s.ownerRuntimeMu.Unlock()
+		return nil, nil, errCode("user_closing", "账号正在关闭", true)
+	}
+	if state.active == 0 {
+		state.idle = make(chan struct{})
+	}
+	state.active++
+	runtimeCtx := state.ctx
+	s.ownerRuntimeMu.Unlock()
+	ctx, cancel := mergeRuntimeContext(parent, runtimeCtx)
+	var once sync.Once
+	release := func() {
+		once.Do(func() {
+			cancel()
+			s.ownerRuntimeMu.Lock()
+			state.active--
+			if state.active == 0 {
+				close(state.idle)
+			}
+			s.ownerRuntimeMu.Unlock()
+		})
+	}
+	return ctx, release, nil
+}
+
+func (s *Server) beginOwnerDrain(ownerID string) (<-chan struct{}, error) {
+	ownerID = strings.TrimSpace(ownerID)
+	s.ownerRuntimeMu.Lock()
+	defer s.ownerRuntimeMu.Unlock()
+	state := s.ownerRuntimes[ownerID]
+	if state == nil {
+		state = &ownerRuntimeState{}
+		state.ctx, state.cancel = context.WithCancel(s.rootCtx)
+		closed := make(chan struct{})
+		close(closed)
+		state.idle = closed
+		s.ownerRuntimes[ownerID] = state
+	}
+	if state.draining {
+		return nil, errCode("user_busy", "账号正在关闭", true)
+	}
+	state.draining = true
+	state.cancel()
+	return state.idle, nil
+}
+
+func (s *Server) abortOwnerDrain(ownerID string) {
+	s.ownerRuntimeMu.Lock()
+	defer s.ownerRuntimeMu.Unlock()
+	state := s.ownerRuntimes[strings.TrimSpace(ownerID)]
+	if state == nil {
+		return
+	}
+	state.ctx, state.cancel = context.WithCancel(s.rootCtx)
+	state.draining = false
 }
 
 func (s *Server) StartMailWatcher(ctx context.Context) {
@@ -314,11 +460,15 @@ func (s *Server) StartMailWatcher(ctx context.Context) {
 		s.mailWatcherMu.Unlock()
 		return
 	}
-	watchCtx, cancel := context.WithCancel(ctx)
+	watchCtx, cancel := mergeRuntimeContext(ctx, s.rootCtx)
 	s.mailWatcherCancel = cancel
 	s.mailWatcherMu.Unlock()
-
-	go s.runMailWatcher(watchCtx)
+	if !s.startBackground(func(context.Context) { s.runMailWatcher(watchCtx) }) {
+		cancel()
+		s.mailWatcherMu.Lock()
+		s.mailWatcherCancel = nil
+		s.mailWatcherMu.Unlock()
+	}
 }
 
 func (s *Server) StopMailWatcher() {
@@ -343,11 +493,16 @@ func (s *Server) StartAppleAccountKeepAlive(ctx context.Context) {
 		s.appleAccountKeepAliveMu.Unlock()
 		return
 	}
-	keepAliveCtx, cancel := context.WithCancel(ctx)
+	keepAliveCtx, cancel := mergeRuntimeContext(ctx, s.rootCtx)
 	s.appleAccountKeepAliveCancel = cancel
 	s.appleAccountKeepAliveMu.Unlock()
 
-	go s.runAppleAccountKeepAlive(keepAliveCtx)
+	if !s.startBackground(func(context.Context) { s.runAppleAccountKeepAlive(keepAliveCtx) }) {
+		cancel()
+		s.appleAccountKeepAliveMu.Lock()
+		s.appleAccountKeepAliveCancel = nil
+		s.appleAccountKeepAliveMu.Unlock()
+	}
 }
 
 func (s *Server) StopAppleAccountKeepAlive() {
@@ -645,8 +800,28 @@ func (s *Server) handleAdminDeleteUser(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, errCode("cannot_delete_admin_user", "不能删除管理员账号", false))
 		return
 	}
+	idle, err := s.beginOwnerDrain(id)
+	if err != nil {
+		writeError(w, http.StatusConflict, err)
+		return
+	}
+	s.stopOwnerScheduler(id, "账号正在关闭")
+	timer := time.NewTimer(ownerDrainTimeout)
+	defer timer.Stop()
+	select {
+	case <-idle:
+	case <-timer.C:
+		s.abortOwnerDrain(id)
+		writeError(w, http.StatusConflict, errCode("user_busy", "账号后台任务仍在运行，请稍后重试", true))
+		return
+	case <-r.Context().Done():
+		s.abortOwnerDrain(id)
+		writeError(w, http.StatusConflict, errCode("user_busy", "账号关闭请求已取消", true))
+		return
+	}
 	result, err := s.store.DeleteUser(id)
 	if err != nil {
+		s.abortOwnerDrain(id)
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
@@ -1158,6 +1333,7 @@ func (s *Server) handleSaveICloudIMAPLogin(w http.ResponseWriter, r *http.Reques
 	}
 	session.OwnerID = ownerID
 	session.AppleID = firstNonEmpty(strings.TrimSpace(session.AppleID), email)
+	previousIMAP, _ := iCloudIMAPLoginState(session)
 	session = withICloudIMAPLoginState(session, LoginState{
 		Kind:              LoginStateICloudIMAP,
 		Host:              defaultICloudIMAPHost,
@@ -1168,6 +1344,9 @@ func (s *Server) handleSaveICloudIMAPLogin(w http.ResponseWriter, r *http.Reques
 		IMAPHost:          defaultICloudIMAPHost,
 		IMAPPort:          defaultICloudIMAPPort,
 		IMAPAppPassword:   appPassword,
+		IMAPLastSyncAt:    previousIMAP.IMAPLastSyncAt,
+		IMAPLastSyncUID:   previousIMAP.IMAPLastSyncUID,
+		IMAPUIDValidity:   previousIMAP.IMAPUIDValidity,
 		LastCheckedAt:     now,
 		LastCheckOK:       true,
 		LastStatusMessage: "取码登录正常",
@@ -1179,6 +1358,7 @@ func (s *Server) handleSaveICloudIMAPLogin(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
+	s.pokeMailWatcher()
 	sessions := s.publicSessionsForOwner(ownerID)
 	publicSession := publicSessionForAccountID(sessions, session.AccountID)
 	if strings.TrimSpace(session.AccountID) == "" {
@@ -2799,8 +2979,11 @@ func (s *Server) runMailWatcher(ctx context.Context) {
 
 	idleWorkers := make(map[string]mailboxWatcherIdleWorker)
 	stopIdleWorkers := func() {
-		for key, worker := range idleWorkers {
+		for _, worker := range idleWorkers {
 			worker.cancel()
+		}
+		for key, worker := range idleWorkers {
+			<-worker.done
 			delete(idleWorkers, key)
 		}
 	}
@@ -2892,10 +3075,15 @@ func (s *Server) keepAliveAppleAccountRound(ctx context.Context) {
 		if !appleAccountKeepAliveDue(state, now, interval) {
 			continue
 		}
-		callCtx, cancel := context.WithTimeout(ctx, appleAccountKeepAliveTimeout)
+		ownerCtx, releaseOwner, ownerErr := s.acquireOwnerRuntime(ctx, session.OwnerID)
+		if ownerErr != nil {
+			continue
+		}
+		callCtx, cancel := context.WithTimeout(ownerCtx, appleAccountKeepAliveTimeout)
 		release, gateErr := acquireAppleAccountOperationGate(callCtx, appleAccountOperationKey(session, state))
 		if gateErr != nil {
 			cancel()
+			releaseOwner()
 			if s.logger != nil {
 				s.logger.Warn("apple account keepalive gate failed", "owner", s.ownerName(session.OwnerID), "account_id", session.AccountID, "apple_id", session.AppleID, "err", gateErr)
 			}
@@ -2909,26 +3097,27 @@ func (s *Server) keepAliveAppleAccountRound(ctx context.Context) {
 				state.LastCheckedAt = time.Now()
 				state.LastCheckOK = false
 				state.LastStatusMessage = "新接口登录态异常：" + err.Error()
-				session = withAppleAccountLoginState(session, state)
-				if saveErr := s.store.SaveICloudSessionForOwner(session.OwnerID, session); saveErr != nil && s.logger != nil {
+				if _, saveErr := s.store.UpdateICloudLoginStateForOwner(session.OwnerID, session.AccountID, state); saveErr != nil && s.logger != nil {
 					s.logger.Warn("apple account keepalive save failed", "owner", s.ownerName(session.OwnerID), "account_id", session.AccountID, "err", saveErr)
 				}
 			}
 			if s.logger != nil {
 				s.logger.Warn("apple account keepalive failed", "owner", s.ownerName(session.OwnerID), "account_id", session.AccountID, "apple_id", session.AppleID, "err", err)
 			}
+			releaseOwner()
 			continue
 		}
-		session = withAppleAccountLoginState(session, next)
-		if err := s.store.SaveICloudSessionForOwner(session.OwnerID, session); err != nil {
+		if _, err := s.store.UpdateICloudLoginStateForOwner(session.OwnerID, session.AccountID, next); err != nil {
 			if s.logger != nil {
 				s.logger.Warn("apple account keepalive save failed", "owner", s.ownerName(session.OwnerID), "account_id", session.AccountID, "err", err)
 			}
+			releaseOwner()
 			continue
 		}
 		if s.logger != nil {
 			s.logger.Info("apple account keepalive ok", "owner", s.ownerName(session.OwnerID), "account_id", session.AccountID, "apple_id", session.AppleID)
 		}
+		releaseOwner()
 	}
 }
 
@@ -2993,61 +3182,34 @@ func (s *Server) ensureMailWatcherIdleWorkers(ctx context.Context, workers map[s
 		}
 		if worker, ok := workers[group.key]; ok {
 			worker.cancel()
-		}
-		if err := s.ensureMailWatcherIMAPBaseline(ctx, group); err != nil {
-			if s.logger != nil {
-				s.logger.Warn("mail watcher imap baseline failed", "owner", s.ownerName(group.ownerID), "mailboxes", len(group.mailboxes), "err", err)
-			}
-			continue
+			<-worker.done
 		}
 		workerCtx, cancel := context.WithCancel(ctx)
-		workers[group.key] = mailboxWatcherIdleWorker{cancel: cancel, signature: group.signature}
-		go s.runMailWatcherIdleWorker(workerCtx, group)
+		done := make(chan struct{})
+		workers[group.key] = mailboxWatcherIdleWorker{cancel: cancel, signature: group.signature, done: done}
+		go func() {
+			defer close(done)
+			s.runMailWatcherIdleWorker(workerCtx, group)
+		}()
 	}
 	for key, worker := range workers {
 		if _, ok := seen[key]; ok {
 			continue
 		}
 		worker.cancel()
+		<-worker.done
 		delete(workers, key)
 	}
-}
-
-func (s *Server) ensureMailWatcherIMAPBaseline(ctx context.Context, group mailboxWatcherIMAPGroup) error {
-	if imapUIDNumber(group.state.IMAPLastSyncUID) > 0 {
-		return nil
-	}
-	latestFn := s.latestIMAPUID
-	if latestFn == nil {
-		latestFn = LatestICloudIMAPUID
-	}
-	uid, err := latestFn(ctx, group.state)
-	if err != nil {
-		return err
-	}
-	if strings.TrimSpace(uid) == "" {
-		return nil
-	}
-	accountID := ""
-	resolver := s.imapSessionResolverForOwner(group.ownerID)
-	for _, mailbox := range group.mailboxes {
-		session, state, ok := resolver.sessionForMailbox(mailbox)
-		if !ok || imapStateKey(state) != imapStateKey(group.state) {
-			continue
-		}
-		accountID = strings.TrimSpace(session.AccountID)
-		break
-	}
-	if _, err := s.store.SetICloudIMAPSyncCursor(group.ownerID, accountID, imapStateKey(group.state), time.Now(), uid); err != nil {
-		return err
-	}
-	return nil
 }
 
 func (s *Server) runMailWatcherIdleWorker(ctx context.Context, group mailboxWatcherIMAPGroup) {
 	backoff := time.Second
 	for ctx.Err() == nil {
-		err := WatchICloudIMAPExists(ctx, group.state, func() {
+		watchFn := s.watchIMAPExists
+		if watchFn == nil {
+			watchFn = WatchICloudIMAPExists
+		}
+		err := watchFn(ctx, group.state, func() {
 			if ctx.Err() != nil {
 				return
 			}
@@ -3237,11 +3399,13 @@ func (s *Server) mailWatcherIMAPGroups() []mailboxWatcherIMAPGroup {
 }
 
 func mailWatcherIMAPGroupSignature(state LoginState, mailboxes []Mailbox) string {
+	credentialFingerprint := sha256.Sum256([]byte(state.IMAPAppPassword))
 	parts := []string{
 		normalizeICloudIMAPEmail(state.IMAPEmail),
 		strings.TrimSpace(state.IMAPUsername),
 		state.IMAPHost,
 		strconv.Itoa(state.IMAPPort),
+		fmt.Sprintf("%x", credentialFingerprint[:]),
 	}
 	for _, mailbox := range mailboxes {
 		parts = append(parts, strings.TrimSpace(mailbox.ID), normalizeICloudIMAPEmail(mailbox.Email))
@@ -3257,6 +3421,11 @@ func (s *Server) syncMailboxCodeBatchForOwnerWithLimit(ctx context.Context, owne
 	if len(mailboxes) == 0 {
 		return 0, nil
 	}
+	ctx, releaseOwner, err := s.acquireOwnerRuntime(ctx, ownerID)
+	if err != nil {
+		return 0, err
+	}
+	defer releaseOwner()
 	release, err := s.acquireMailboxSyncSlot(ctx, ownerID)
 	if err != nil {
 		return 0, err
@@ -3319,7 +3488,15 @@ func (s *Server) syncMailboxCodeBatchForOwnerWithLimit(ctx context.Context, owne
 	for _, key := range order {
 		group := groups[key]
 		state := group.state
-		syncResult, err := syncFn(ctx, state, group.mailboxes, after, keyword, maxMessages)
+		syncAfter := after
+		if syncAfter.IsZero() {
+			lookback := s.mailWatcherLookback
+			if lookback <= 0 {
+				lookback = defaultMailWatcherLookback
+			}
+			syncAfter = time.Now().Add(-lookback)
+		}
+		syncResult, err := syncFn(ctx, state, group.mailboxes, syncAfter, keyword, maxMessages)
 		if err != nil {
 			return synced, err
 		}
@@ -3328,6 +3505,9 @@ func (s *Server) syncMailboxCodeBatchForOwnerWithLimit(ctx context.Context, owne
 			messagesByMailbox = map[string][]ICloudSyncedMessage{}
 		}
 		lastAccountUID := strings.TrimSpace(syncResult.LastUID)
+		if len(messagesByMailbox) == 0 && lastAccountUID == "" && !syncResult.ResetCursor && strings.TrimSpace(syncResult.UIDValidity) == strings.TrimSpace(state.IMAPUIDValidity) {
+			continue
+		}
 		updates := make([]MailboxSyncUpdate, 0, len(group.mailboxes))
 		for _, mailbox := range group.mailboxes {
 			messages := make([]ICloudSyncedMessage, 0, len(messagesByMailbox[mailbox.ID]))
@@ -3337,13 +3517,15 @@ func (s *Server) syncMailboxCodeBatchForOwnerWithLimit(ctx context.Context, owne
 				}
 				messages = append(messages, msg)
 			}
-			updates = append(updates, MailboxSyncUpdate{MailboxID: mailbox.ID, Source: "imap", Messages: messages, SyncedAt: now, LastUID: lastAccountUID})
+			updates = append(updates, MailboxSyncUpdate{MailboxID: mailbox.ID, Source: "imap", Messages: messages, SyncedAt: now, LastUID: lastAccountUID, ResetCursor: syncResult.ResetCursor})
 		}
 		created, err := s.store.CommitMailboxSync(ownerID, updates, &IMAPSyncCursorUpdate{
-			AccountID: group.session.AccountID,
-			StateKey:  imapStateKey(group.state),
-			SyncedAt:  now,
-			LastUID:   lastAccountUID,
+			AccountID:   group.session.AccountID,
+			StateKey:    imapStateKey(group.state),
+			SyncedAt:    now,
+			LastUID:     lastAccountUID,
+			UIDValidity: syncResult.UIDValidity,
+			ResetCursor: syncResult.ResetCursor,
 		})
 		if err != nil {
 			return synced, err
@@ -3365,6 +3547,11 @@ func (s *Server) syncMailboxBatchForOwnerWithLimit(ctx context.Context, ownerID 
 	if len(mailboxes) == 0 {
 		return nil
 	}
+	ctx, releaseOwner, err := s.acquireOwnerRuntime(ctx, ownerID)
+	if err != nil {
+		return err
+	}
+	defer releaseOwner()
 	release, err := s.acquireMailboxSyncSlot(ctx, ownerID)
 	if err != nil {
 		return err
@@ -3595,6 +3782,11 @@ func (s *Server) createMailboxesForOwner(ctx context.Context, ownerID string, ac
 }
 
 func (s *Server) createMailboxesForOwnerWithChannels(ctx context.Context, ownerID string, requests []mailboxCreateRequest, label, note string) ([]Mailbox, []ICloudRemoteMailbox, []createMailboxFailure, error) {
+	ctx, releaseOwner, err := s.acquireOwnerRuntime(ctx, ownerID)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	defer releaseOwner()
 	accountIDs, channels := normalizeMailboxCreateRequests(requests)
 	sessions := s.sessionsForOwnerAccounts(ownerID, accountIDs)
 	if len(sessions) == 0 {
