@@ -10,6 +10,7 @@ import (
 	"html"
 	"io"
 	"net/http"
+	"net/mail"
 	"net/url"
 	"os"
 	"regexp"
@@ -1576,7 +1577,7 @@ func (c *ICloudClient) threadMessagesForAliases(ctx context.Context, session ICl
 		receivedAt := firstNonZeroTime(parseMailTime(meta.Date), time.Now())
 		folderName := firstNonEmpty(cleanMailFolder(meta.Folder), folder.Name)
 		from := addressSummary(meta.From)
-		recipients := string(meta.To) + "\n" + string(meta.CC) + "\n" + string(meta.BCC)
+		recipients := strings.Join([]string{addressSummary(meta.To), addressSummary(meta.CC), addressSummary(meta.BCC)}, "\n")
 		bodyText := meta.Subject + "\n" + meta.Preview
 		partIDs := textPartIDs(meta.Parts)
 		if len(partIDs) > 0 {
@@ -1584,7 +1585,6 @@ func (c *ICloudClient) threadMessagesForAliases(ctx context.Context, session ICl
 			if err != nil {
 				return messages, err
 			}
-			recipients += "\n" + detail.LongHeader
 			bodyText += "\n" + detail.Body
 		}
 		matchedMailboxIDs := matchingMailboxIDs(recipients, aliases)
@@ -1614,12 +1614,32 @@ func matchingMailboxIDs(recipients string, aliases map[string]string) []string {
 	if len(aliases) == 0 {
 		return nil
 	}
+	addresses := make(map[string]struct{})
+	for _, line := range strings.Split(recipients, "\n") {
+		parsed, err := mail.ParseAddressList(strings.TrimSpace(line))
+		if err != nil {
+			parsed = nil
+			for _, part := range strings.Split(line, ",") {
+				if single, singleErr := mail.ParseAddress(strings.TrimSpace(part)); singleErr == nil {
+					parsed = append(parsed, single)
+				}
+			}
+		}
+		for _, address := range parsed {
+			email := strings.ToLower(strings.TrimSpace(address.Address))
+			if email != "" {
+				addresses[email] = struct{}{}
+			}
+		}
+	}
 	var ids []string
 	for mailboxID, alias := range aliases {
-		if strings.TrimSpace(mailboxID) == "" || strings.TrimSpace(alias) == "" {
+		mailboxID = strings.TrimSpace(mailboxID)
+		alias = strings.ToLower(strings.TrimSpace(alias))
+		if mailboxID == "" || alias == "" {
 			continue
 		}
-		if containsFold(recipients, alias) {
+		if _, ok := addresses[alias]; ok {
 			ids = append(ids, mailboxID)
 		}
 	}
@@ -1628,14 +1648,12 @@ func matchingMailboxIDs(recipients string, aliases map[string]string) []string {
 }
 
 type mailMessageDetail struct {
-	LongHeader string
-	Body       string
+	Body string
 }
 
 func (c *ICloudClient) messageBody(ctx context.Context, session ICloudSession, folderName, uid string, partIDs []string) (mailMessageDetail, error) {
 	var out struct {
-		LongHeader string `json:"longHeader"`
-		Parts      []struct {
+		Parts []struct {
 			GUID    string `json:"guid"`
 			Content string `json:"content"`
 		} `json:"parts"`
@@ -1653,7 +1671,7 @@ func (c *ICloudClient) messageBody(ctx context.Context, session ICloudSession, f
 	for _, part := range out.Parts {
 		parts = append(parts, part.Content)
 	}
-	return mailMessageDetail{LongHeader: out.LongHeader, Body: strings.Join(parts, "\n")}, nil
+	return mailMessageDetail{Body: strings.Join(parts, "\n")}, nil
 }
 
 func (c *ICloudClient) MoveRemoteMessagesToTrash(ctx context.Context, session ICloudSession, remoteIDs []string) (ICloudMailCleanupResult, error) {
@@ -2196,10 +2214,6 @@ func cleanMailFolder(value string) string {
 		return value[idx+1:]
 	}
 	return value
-}
-
-func containsFold(text, needle string) bool {
-	return strings.Contains(strings.ToLower(text), strings.ToLower(strings.TrimSpace(needle)))
 }
 
 var htmlTagRegex = regexp.MustCompile(`<[^>]+>`)

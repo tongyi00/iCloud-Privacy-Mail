@@ -41,6 +41,7 @@ var iCloudIMAPFallbackIPv4 = []net.IP{
 type iCloudIMAPSyncResult struct {
 	MessagesByMailbox map[string][]ICloudSyncedMessage
 	LastUID           string
+	Backlog           bool
 }
 
 func newICloudIMAPDialer(serverName string) tls.Dialer {
@@ -733,18 +734,18 @@ func SyncICloudIMAPMessagesWithCursor(ctx context.Context, state LoginState, mai
 		return iCloudIMAPSyncResult{}, errCode("imap_search_failed", "搜索 iCloud IMAP 邮件失败："+imapResponseSummary(searchLines), true)
 	}
 	uids := imapSearchUIDs(searchLines)
+	cursor := imapSyncCursor(state, mailboxes)
+	uids = imapUIDsAfter(uids, cursor)
 	if len(uids) == 0 {
 		_, _ = imapCommand(conn, reader, "A004", "LOGOUT")
 		return iCloudIMAPSyncResult{MessagesByMailbox: map[string][]ICloudSyncedMessage{}}, nil
 	}
 	sortInts(uids)
-	uids = lastIntValues(uids, maxMessages)
-	lastUID := ""
-	if len(uids) > 0 {
-		lastUID = strconv.Itoa(uids[len(uids)-1])
-	}
+	backlog := len(uids) > maxMessages
+	uids = firstIntValues(uids, maxMessages)
 
 	fetched := make([]iCloudIMAPFetchedMessage, 0, len(uids))
+	processedUIDs := make(map[int]struct{}, len(uids))
 	tag := 4
 	for _, chunk := range chunkInts(uids, 20) {
 		tag++
@@ -759,16 +760,33 @@ func SyncICloudIMAPMessagesWithCursor(ctx context.Context, state LoginState, mai
 		for i, raw := range literals {
 			uid := ""
 			if i < len(fetchUIDs) {
+				processedUIDs[fetchUIDs[i]] = struct{}{}
 				uid = strconv.Itoa(fetchUIDs[i])
 			}
 			fetched = append(fetched, iCloudIMAPFetchedMessage{UID: uid, Raw: raw})
 		}
 	}
 	_, _ = imapCommand(conn, reader, fmt.Sprintf("A%03d", tag+1), "LOGOUT")
+	lastUID := imapLastProcessedUID(uids, processedUIDs)
 	return iCloudIMAPSyncResult{
 		MessagesByMailbox: iCloudIMAPMessagesByMailbox(fetched, mailboxes, after, keyword, state.IMAPEmail, state.IMAPUsername),
 		LastUID:           lastUID,
+		Backlog:           backlog,
 	}, nil
+}
+
+func imapLastProcessedUID(selected []int, processed map[int]struct{}) string {
+	last := 0
+	for _, uid := range selected {
+		if _, ok := processed[uid]; !ok {
+			break
+		}
+		last = uid
+	}
+	if last == 0 {
+		return ""
+	}
+	return strconv.Itoa(last)
 }
 
 func imapSearchCommand(state LoginState, mailboxes []Mailbox, after time.Time) string {
@@ -904,7 +922,7 @@ func parseICloudIMAPMessage(item iCloudIMAPFetchedMessage) (ICloudSyncedMessage,
 	if uid != "" {
 		remoteID += ":" + uid
 	}
-	recipients := imapHeaderText(msg.Header)
+	recipients := imapRecipientText(msg.Header)
 	return ICloudSyncedMessage{
 		RemoteID:   remoteID,
 		UID:        uid,
@@ -992,11 +1010,41 @@ func sortInts(values []int) {
 	}
 }
 
-func lastIntValues(values []int, limit int) []int {
+func firstIntValues(values []int, limit int) []int {
 	if limit <= 0 || len(values) <= limit {
 		return values
 	}
-	return values[len(values)-limit:]
+	return values[:limit]
+}
+
+func imapSyncCursor(state LoginState, mailboxes []Mailbox) int {
+	if cursor := imapUIDNumber(state.IMAPLastSyncUID); cursor > 0 {
+		return cursor
+	}
+	cursor := 0
+	for _, mailbox := range mailboxes {
+		uid := imapUIDNumber(mailbox.LastSyncUID)
+		if uid == 0 {
+			return 0
+		}
+		if cursor == 0 || uid < cursor {
+			cursor = uid
+		}
+	}
+	return cursor
+}
+
+func imapUIDsAfter(values []int, cursor int) []int {
+	if cursor <= 0 {
+		return values
+	}
+	filtered := values[:0]
+	for _, uid := range values {
+		if uid > cursor {
+			filtered = append(filtered, uid)
+		}
+	}
+	return filtered
 }
 
 func chunkInts(values []int, size int) [][]int {
@@ -1022,11 +1070,12 @@ func imapUIDSet(values []int) string {
 	return strings.Join(parts, ",")
 }
 
-func imapHeaderText(header mail.Header) string {
+func imapRecipientText(header mail.Header) string {
 	var out []string
-	for key, values := range header {
+	for _, key := range []string{"To", "Cc", "Bcc"} {
+		values := header[key]
 		for _, value := range values {
-			out = append(out, key+": "+decodeMIMEHeader(value))
+			out = append(out, decodeMIMEHeader(value))
 		}
 	}
 	return strings.Join(out, "\n")

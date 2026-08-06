@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 const (
@@ -22,6 +23,22 @@ const (
 )
 
 var usernameRegex = regexp.MustCompile(`^[a-z0-9][a-z0-9_.@-]{2,63}$`)
+var dummyHashOnce sync.Once
+var dummyHash string
+
+func dummyPasswordHash() string {
+	dummyHashOnce.Do(func() {
+		salt := []byte("ipm-dummy-login")
+		key := pbkdf2SHA256([]byte("invalid-password"), salt, passwordIterations, passwordKeyBytes)
+		dummyHash = fmt.Sprintf("%s$%d$%s$%s",
+			passwordHashVersion,
+			passwordIterations,
+			base64.RawURLEncoding.EncodeToString(salt),
+			base64.RawURLEncoding.EncodeToString(key),
+		)
+	})
+	return dummyHash
+}
 
 func normalizeUsername(username string) string {
 	return strings.ToLower(strings.TrimSpace(username))

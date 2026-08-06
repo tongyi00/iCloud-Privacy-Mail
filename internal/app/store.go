@@ -12,9 +12,12 @@ import (
 )
 
 type FileStore struct {
-	mu    sync.Mutex
-	path  string
-	state State
+	mu               sync.Mutex
+	path             string
+	state            State
+	committed        State
+	passwordVerifier func(string, string) bool
+	saveCount        int
 }
 
 type DeleteUserResult struct {
@@ -25,6 +28,21 @@ type DeleteUserResult struct {
 	Messages       int    `json:"messages"`
 	ICloudSessions int    `json:"icloud_sessions"`
 	WebSessions    int    `json:"web_sessions"`
+}
+
+type MailboxSyncUpdate struct {
+	MailboxID string
+	Source    string
+	Messages  []ICloudSyncedMessage
+	SyncedAt  time.Time
+	LastUID   string
+}
+
+type IMAPSyncCursorUpdate struct {
+	AccountID string
+	StateKey  string
+	SyncedAt  time.Time
+	LastUID   string
 }
 
 func NewFileStore(path string) (*FileStore, error) {
@@ -58,9 +76,11 @@ func (s *FileStore) load() error {
 	if s.state.NextID <= 0 {
 		s.state.NextID = 1
 	}
+	s.committed = cloneState(s.state)
 	if s.migrateLegacyMailboxAccountIDsLocked() {
 		return s.saveLocked()
 	}
+	s.committed = cloneState(s.state)
 	return nil
 }
 
@@ -87,6 +107,9 @@ func (s *FileStore) SaveCreateSettingsForOwner(ownerID string, settings CreateSe
 	defer s.mu.Unlock()
 
 	ownerID = strings.TrimSpace(ownerID)
+	if err := s.validateOwnerLocked(ownerID); err != nil {
+		return CreateSettings{}, err
+	}
 	settings = normalizeCreateSettings(ownerID, settings)
 	settings.UpdatedAt = time.Now()
 	for i := range s.state.CreateSettings {
@@ -106,9 +129,6 @@ func (s *FileStore) Users() []User {
 }
 
 func (s *FileStore) CreateUser(username, password string) (User, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	username = normalizeUsername(username)
 	if err := validateUsername(username); err != nil {
 		return User{}, err
@@ -116,50 +136,138 @@ func (s *FileStore) CreateUser(username, password string) (User, error) {
 	if err := validatePassword(password); err != nil {
 		return User{}, err
 	}
+	passwordHash, err := hashPassword(password)
+	if err != nil {
+		return User{}, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	user, err := s.createUserLocked(username, passwordHash, false)
+	if err != nil {
+		return User{}, err
+	}
+	return user, s.saveLocked()
+}
+
+func (s *FileStore) createUserLocked(username, passwordHash string, isAdmin bool) (User, error) {
 	for _, user := range s.state.Users {
 		if strings.EqualFold(user.Username, username) {
 			return User{}, errCode("user_exists", "账号已存在", false)
 		}
-	}
-	passwordHash, err := hashPassword(password)
-	if err != nil {
-		return User{}, err
 	}
 	now := time.Now()
 	user := User{
 		ID:           s.nextIDLocked("usr"),
 		Username:     username,
 		PasswordHash: passwordHash,
-		IsAdmin:      len(s.state.Users) == 0,
+		IsAdmin:      isAdmin,
 		Status:       StatusActive,
 		CreatedAt:    now,
 		UpdatedAt:    now,
 	}
 	s.state.Users = append(s.state.Users, user)
-	return user, s.saveLocked()
+	return user, nil
 }
 
-func (s *FileStore) AuthenticateUser(username, password string) (User, error) {
+func (s *FileStore) BootstrapAdmin(username, password string, ttl time.Duration) (User, string, WebSession, error) {
+	username = normalizeUsername(username)
+	if err := validateUsername(username); err != nil {
+		return User{}, "", WebSession{}, err
+	}
+	if err := validatePassword(password); err != nil {
+		return User{}, "", WebSession{}, err
+	}
+	passwordHash, err := hashPassword(password)
+	if err != nil {
+		return User{}, "", WebSession{}, err
+	}
+	token, err := randomToken(32)
+	if err != nil {
+		return User{}, "", WebSession{}, err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if len(s.state.Users) != 0 {
+		return User{}, "", WebSession{}, errCode("bootstrap_completed", "管理员初始化已经完成", false)
+	}
+	user, err := s.createUserLocked(username, passwordHash, true)
+	if err != nil {
+		return User{}, "", WebSession{}, err
+	}
+	now := time.Now()
+	session := WebSession{
+		TokenHash:  sessionTokenHash(token),
+		UserID:     user.ID,
+		IsAdmin:    true,
+		CreatedAt:  now,
+		LastSeenAt: now,
+		ExpiresAt:  now.Add(ttl),
+	}
+	s.state.WebSessions = append(s.state.WebSessions, session)
+	if err := s.saveLocked(); err != nil {
+		return User{}, "", WebSession{}, err
+	}
+	return user, token, session, nil
+}
 
+func (s *FileStore) AuthenticateUserAndCreateSession(username, password string, ttl time.Duration) (User, string, WebSession, error) {
 	username = normalizeUsername(username)
-	for i, user := range s.state.Users {
-		if !strings.EqualFold(user.Username, username) {
+	s.mu.Lock()
+	var candidate User
+	for _, user := range s.state.Users {
+		if strings.EqualFold(user.Username, username) {
+			candidate = user
+			break
+		}
+	}
+	s.mu.Unlock()
+	hash := candidate.PasswordHash
+	if hash == "" {
+		hash = dummyPasswordHash()
+	}
+	if !s.verifyPassword(password, hash) || candidate.ID == "" {
+		return User{}, "", WebSession{}, errCode("invalid_login", "账号或密码错误", false)
+	}
+	token, err := randomToken(32)
+	if err != nil {
+		return User{}, "", WebSession{}, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.state.Users {
+		current := &s.state.Users[i]
+		if current.ID != candidate.ID || current.PasswordHash != candidate.PasswordHash {
 			continue
 		}
-		if user.Status != StatusActive {
-			return User{}, errCode("user_disabled", "账号已停用", false)
-		}
-		if !verifyPassword(password, user.PasswordHash) {
-			return User{}, errCode("invalid_login", "账号或密码错误", false)
+		if current.Status != StatusActive {
+			return User{}, "", WebSession{}, errCode("user_disabled", "账号已停用", false)
 		}
 		now := time.Now()
-		s.state.Users[i].LastLoginAt = now
-		s.state.Users[i].UpdatedAt = now
-		return s.state.Users[i], s.saveLocked()
+		current.LastLoginAt = now
+		current.UpdatedAt = now
+		session := WebSession{
+			TokenHash:  sessionTokenHash(token),
+			UserID:     current.ID,
+			IsAdmin:    current.IsAdmin,
+			CreatedAt:  now,
+			LastSeenAt: now,
+			ExpiresAt:  now.Add(ttl),
+		}
+		s.state.WebSessions = append(s.state.WebSessions, session)
+		user := *current
+		if err := s.saveLocked(); err != nil {
+			return User{}, "", WebSession{}, err
+		}
+		return user, token, session, nil
 	}
-	return User{}, errCode("invalid_login", "账号或密码错误", false)
+	return User{}, "", WebSession{}, errCode("invalid_login", "账号或密码错误", false)
+}
+
+func (s *FileStore) verifyPassword(password, encoded string) bool {
+	if s.passwordVerifier != nil {
+		return s.passwordVerifier(password, encoded)
+	}
+	return verifyPassword(password, encoded)
 }
 
 func (s *FileStore) UserByID(id string) (User, bool) {
@@ -326,6 +434,7 @@ func (s *FileStore) Path() string {
 func (s *FileStore) SetPath(path string) (State, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	oldPath := s.path
 
 	path = strings.TrimSpace(path)
 	if path == "" {
@@ -357,6 +466,7 @@ func (s *FileStore) SetPath(path string) (State, error) {
 	}
 	s.path = path
 	if err := s.saveLocked(); err != nil {
+		s.path = oldPath
 		return State{}, err
 	}
 	return cloneState(s.state), nil
@@ -369,11 +479,15 @@ func (s *FileStore) AddAccount(label, appleID, note string) (Account, error) {
 func (s *FileStore) AddAccountForOwner(ownerID, label, appleID, note string) (Account, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	ownerID = strings.TrimSpace(ownerID)
+	if err := s.validateOwnerLocked(ownerID); err != nil {
+		return Account{}, err
+	}
 
 	now := time.Now()
 	account := Account{
 		ID:           s.nextIDLocked("acc"),
-		OwnerID:      strings.TrimSpace(ownerID),
+		OwnerID:      ownerID,
 		Label:        strings.TrimSpace(label),
 		AppleID:      strings.TrimSpace(appleID),
 		Status:       StatusActive,
@@ -396,6 +510,11 @@ func (s *FileStore) AddMailbox(accountID, label, email string) (Mailbox, error) 
 func (s *FileStore) AddMailboxForOwner(ownerID, accountID, label, email string) (Mailbox, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	ownerID = strings.TrimSpace(ownerID)
+	accountID = strings.TrimSpace(accountID)
+	if err := s.validateOwnerAccountLocked(ownerID, accountID); err != nil {
+		return Mailbox{}, err
+	}
 
 	email = strings.ToLower(strings.TrimSpace(email))
 	if email == "" {
@@ -417,8 +536,8 @@ func (s *FileStore) AddMailboxForOwner(ownerID, accountID, label, email string) 
 	}
 	mailbox := Mailbox{
 		ID:           s.nextIDLocked("mbx"),
-		OwnerID:      strings.TrimSpace(ownerID),
-		AccountID:    strings.TrimSpace(accountID),
+		OwnerID:      ownerID,
+		AccountID:    accountID,
 		Label:        strings.TrimSpace(label),
 		Email:        email,
 		APIToken:     token,
@@ -438,6 +557,9 @@ func (s *FileStore) UpsertMailboxFromRemote(ownerID, accountID string, remote IC
 
 	ownerID = strings.TrimSpace(ownerID)
 	accountID = strings.TrimSpace(accountID)
+	if err := s.validateOwnerAccountLocked(ownerID, accountID); err != nil {
+		return Mailbox{}, false, err
+	}
 	email := strings.ToLower(strings.TrimSpace(remote.Email))
 	if email == "" {
 		return Mailbox{}, false, errCode("mailbox_email_missing", "iCloud 返回的邮箱地址为空", false)
@@ -529,6 +651,9 @@ func (s *FileStore) SaveICloudSessionForOwner(ownerID string, session ICloudSess
 	defer s.mu.Unlock()
 
 	ownerID = strings.TrimSpace(ownerID)
+	if err := s.validateOwnerLocked(ownerID); err != nil {
+		return err
+	}
 	session.OwnerID = ownerID
 	if session.SavedAt.IsZero() {
 		session.SavedAt = time.Now()
@@ -655,6 +780,14 @@ func (s *FileStore) AddMessage(mailboxID, subject, from, body string, receivedAt
 func (s *FileStore) UpsertMessage(mailboxID, remoteID, source, subject, from, body string, receivedAt time.Time) (Message, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	msg, created, err := s.upsertMessageLocked(mailboxID, remoteID, source, subject, from, body, receivedAt)
+	if err != nil {
+		return Message{}, false, err
+	}
+	return msg, created, s.saveLocked()
+}
+
+func (s *FileStore) upsertMessageLocked(mailboxID, remoteID, source, subject, from, body string, receivedAt time.Time) (Message, bool, error) {
 
 	idx := s.mailboxIndexLocked(mailboxID)
 	if idx < 0 {
@@ -674,7 +807,7 @@ func (s *FileStore) UpsertMessage(mailboxID, remoteID, source, subject, from, bo
 				}
 				s.state.Messages[i].CreatedAt = firstNonZeroTime(s.state.Messages[i].CreatedAt, time.Now())
 				s.state.Mailboxes[idx].UpdatedAt = time.Now()
-				return s.state.Messages[i], false, s.saveLocked()
+				return s.state.Messages[i], false, nil
 			}
 		}
 	}
@@ -696,7 +829,69 @@ func (s *FileStore) UpsertMessage(mailboxID, remoteID, source, subject, from, bo
 	s.state.Messages = append(s.state.Messages, msg)
 	s.state.Mailboxes[idx].ReceiveCount++
 	s.state.Mailboxes[idx].UpdatedAt = time.Now()
-	return msg, true, s.saveLocked()
+	return msg, true, nil
+}
+
+func (s *FileStore) CommitMailboxSync(ownerID string, updates []MailboxSyncUpdate, cursor *IMAPSyncCursorUpdate) (created int, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	before := cloneState(s.state)
+	defer func() {
+		if err != nil {
+			s.state = before
+		}
+	}()
+	ownerID = strings.TrimSpace(ownerID)
+	if ownerID != "" && len(s.state.Users) > 0 {
+		if _, ok := s.userByIDLocked(ownerID); !ok {
+			return 0, errCode("user_not_found", "账号不存在，无法保存同步结果", false)
+		}
+	}
+	for _, update := range updates {
+		idx := s.mailboxIndexLocked(strings.TrimSpace(update.MailboxID))
+		if idx < 0 {
+			return 0, errCode("mailbox_not_found", "邮箱不存在，无法保存同步结果", false)
+		}
+		mailbox := &s.state.Mailboxes[idx]
+		if ownerID != "" && !constantTimeEqual(ownerID, mailbox.OwnerID) {
+			return 0, errCode("mailbox_owner_mismatch", "邮箱不属于当前账号", false)
+		}
+		if mailbox.AccountID != "" && len(s.state.Accounts) > 0 {
+			account, ok := s.accountByIDLocked(mailbox.AccountID)
+			if !ok || (ownerID != "" && !constantTimeEqual(ownerID, account.OwnerID)) {
+				return 0, errCode("account_not_found", "邮箱所属 Apple 账号不存在", false)
+			}
+		}
+		for _, incoming := range update.Messages {
+			remoteID := strings.TrimSpace(incoming.RemoteID)
+			if remoteID == "" && strings.TrimSpace(incoming.UID) != "" {
+				remoteID = "imap:" + strings.TrimSpace(incoming.UID)
+			}
+			_, added, err := s.upsertMessageLocked(mailbox.ID, remoteID, firstNonEmpty(strings.TrimSpace(update.Source), "imap"), incoming.Subject, incoming.From, incoming.Body, incoming.ReceivedAt)
+			if err != nil {
+				return 0, err
+			}
+			if added {
+				created++
+			}
+		}
+		if !update.SyncedAt.IsZero() {
+			mailbox.LastSyncAt = update.SyncedAt
+		}
+		if strings.TrimSpace(update.LastUID) != "" {
+			mailbox.LastSyncUID = strings.TrimSpace(update.LastUID)
+		}
+		mailbox.UpdatedAt = time.Now()
+	}
+	if cursor != nil {
+		if err := s.setICloudIMAPSyncCursorLocked(ownerID, cursor.AccountID, cursor.StateKey, cursor.SyncedAt, cursor.LastUID); err != nil {
+			return 0, err
+		}
+	}
+	if err = s.saveLocked(); err != nil {
+		return 0, err
+	}
+	return created, nil
 }
 
 func (s *FileStore) SetMailboxStatus(id string, apiActive *bool, icloudActive *bool, status, note string) (Mailbox, error) {
@@ -745,6 +940,16 @@ func (s *FileStore) SetMailboxSyncCursor(id string, syncedAt time.Time, lastUID 
 func (s *FileStore) SetICloudIMAPSyncCursor(ownerID, accountID, stateKey string, syncedAt time.Time, lastUID string) (ICloudSession, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.setICloudIMAPSyncCursorLocked(ownerID, accountID, stateKey, syncedAt, lastUID); err != nil {
+		return ICloudSession{}, err
+	}
+	if err := s.saveLocked(); err != nil {
+		return ICloudSession{}, err
+	}
+	return s.iCloudSessionForOwnerAccountLocked(ownerID, accountID)
+}
+
+func (s *FileStore) setICloudIMAPSyncCursorLocked(ownerID, accountID, stateKey string, syncedAt time.Time, lastUID string) error {
 
 	ownerID = strings.TrimSpace(ownerID)
 	accountID = strings.TrimSpace(accountID)
@@ -778,36 +983,14 @@ func (s *FileStore) SetICloudIMAPSyncCursor(ownerID, accountID, stateKey string,
 		return false
 	}
 	if ownerID == "" && s.state.ICloudSession != nil && updateSession(s.state.ICloudSession) {
-		return cloneICloudSession(*s.state.ICloudSession), s.saveLocked()
+		return nil
 	}
 	for i := range s.state.ICloudSessions {
 		if updateSession(&s.state.ICloudSessions[i]) {
-			updated := cloneICloudSession(s.state.ICloudSessions[i])
-			return updated, s.saveLocked()
+			return nil
 		}
 	}
-	return ICloudSession{}, errCode("imap_session_missing", "未找到取码登录态，无法保存 IMAP 同步游标", true)
-}
-
-func (s *FileStore) SetMailboxLastCode(id string, messageID string, servedAt time.Time) (Mailbox, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	idx := s.mailboxIndexLocked(id)
-	if idx < 0 {
-		return Mailbox{}, errCode("mailbox_not_found", "邮箱不存在", false)
-	}
-	messageID = strings.TrimSpace(messageID)
-	if messageID == "" {
-		return Mailbox{}, errCode("message_id_missing", "验证码邮件 ID 为空", false)
-	}
-	if servedAt.IsZero() {
-		servedAt = time.Now()
-	}
-	s.state.Mailboxes[idx].LastCodeMessageID = messageID
-	s.state.Mailboxes[idx].LastCodeAt = servedAt
-	s.state.Mailboxes[idx].UpdatedAt = time.Now()
-	return s.state.Mailboxes[idx], s.saveLocked()
+	return errCode("imap_session_missing", "未找到取码登录态，无法保存 IMAP 同步游标", true)
 }
 
 func (s *FileStore) DeleteMailbox(id string) error {
@@ -1089,6 +1272,55 @@ func (s *FileStore) mailboxIndexLocked(id string) int {
 	return -1
 }
 
+func (s *FileStore) accountByIDLocked(id string) (Account, bool) {
+	for _, account := range s.state.Accounts {
+		if account.ID == strings.TrimSpace(id) {
+			return account, true
+		}
+	}
+	return Account{}, false
+}
+
+func (s *FileStore) validateOwnerLocked(ownerID string) error {
+	ownerID = strings.TrimSpace(ownerID)
+	if ownerID == "" || len(s.state.Users) == 0 {
+		return nil
+	}
+	if _, ok := s.userByIDLocked(ownerID); !ok {
+		return errCode("user_not_found", "账号不存在", false)
+	}
+	return nil
+}
+
+func (s *FileStore) validateOwnerAccountLocked(ownerID, accountID string) error {
+	if err := s.validateOwnerLocked(ownerID); err != nil {
+		return err
+	}
+	accountID = strings.TrimSpace(accountID)
+	if accountID == "" || len(s.state.Users) == 0 {
+		return nil
+	}
+	account, ok := s.accountByIDLocked(accountID)
+	if !ok || (strings.TrimSpace(ownerID) != "" && !constantTimeEqual(ownerID, account.OwnerID)) {
+		return errCode("account_not_found", "Apple 账号不存在", false)
+	}
+	return nil
+}
+
+func (s *FileStore) iCloudSessionForOwnerAccountLocked(ownerID, accountID string) (ICloudSession, error) {
+	ownerID = strings.TrimSpace(ownerID)
+	accountID = strings.TrimSpace(accountID)
+	if ownerID == "" && s.state.ICloudSession != nil {
+		return cloneICloudSession(*s.state.ICloudSession), nil
+	}
+	for _, session := range s.state.ICloudSessions {
+		if constantTimeEqual(ownerID, session.OwnerID) && (accountID == "" || constantTimeEqual(accountID, session.AccountID)) {
+			return cloneICloudSession(session), nil
+		}
+	}
+	return ICloudSession{}, errCode("imap_session_missing", "未找到取码登录态，无法保存 IMAP 同步游标", true)
+}
+
 func (s *FileStore) userByIDLocked(id string) (User, bool) {
 	id = strings.TrimSpace(id)
 	for _, user := range s.state.Users {
@@ -1100,18 +1332,47 @@ func (s *FileStore) userByIDLocked(id string) (User, bool) {
 }
 
 func (s *FileStore) saveLocked() error {
+	candidate := cloneState(s.state)
 	if err := os.MkdirAll(filepath.Dir(s.path), 0o755); err != nil {
+		s.state = cloneState(s.committed)
 		return err
 	}
-	data, err := json.MarshalIndent(s.state, "", "  ")
+	tmp, err := os.CreateTemp(filepath.Dir(s.path), filepath.Base(s.path)+".*.tmp")
 	if err != nil {
+		s.state = cloneState(s.committed)
 		return err
 	}
-	tmp := s.path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+	if err := tmp.Chmod(0o600); err != nil {
+		_ = tmp.Close()
+		s.state = cloneState(s.committed)
 		return err
 	}
-	return os.Rename(tmp, s.path)
+	encoder := json.NewEncoder(tmp)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(candidate); err != nil {
+		_ = tmp.Close()
+		s.state = cloneState(s.committed)
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		s.state = cloneState(s.committed)
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		s.state = cloneState(s.committed)
+		return err
+	}
+	if err := os.Rename(tmpPath, s.path); err != nil {
+		s.state = cloneState(s.committed)
+		return err
+	}
+	s.state = candidate
+	s.committed = cloneState(candidate)
+	s.saveCount++
+	return nil
 }
 
 func (s *FileStore) migrateLegacyMailboxAccountIDsLocked() bool {

@@ -115,14 +115,14 @@ func TestAppleAccountLoginRoutesReturnJSONForExpectedErrors(t *testing.T) {
 	tests := []struct {
 		name       string
 		path       string
-		prepare    func(*testing.T, *Server) string
+		prepare    func(*testing.T, *Server, string) string
 		wantStatus int
 		want       apiError
 	}{
 		{
 			name: "start preserves credential error",
 			path: "/api/apple-account/login/start",
-			prepare: func(t *testing.T, server *Server) string {
+			prepare: func(t *testing.T, server *Server, _ string) string {
 				server.startAppleAccountManageLogin = func(context.Context, string, string, *appleAuthPendingStore, string) (appleAuthStartResult, error) {
 					return appleAuthStartResult{}, errCode("apple_credentials_invalid", "Apple ID 或密码错误，请检查后重新协议登录", false)
 				}
@@ -134,7 +134,7 @@ func TestAppleAccountLoginRoutesReturnJSONForExpectedErrors(t *testing.T) {
 		{
 			name: "2fa hides upstream transport detail",
 			path: "/api/apple-account/login/2fa",
-			prepare: func(t *testing.T, server *Server) string {
+			prepare: func(t *testing.T, server *Server, ownerID string) string {
 				pending, err := server.appleAccountLogins.put(&appleAuthSession{})
 				if err != nil {
 					t.Fatal(err)
@@ -142,6 +142,7 @@ func TestAppleAccountLoginRoutesReturnJSONForExpectedErrors(t *testing.T) {
 				server.submitAppleAccountManage2FA = func(context.Context, appleAuthPending, string, json.RawMessage) (ICloudSession, error) {
 					return ICloudSession{}, errCode("apple_2fa_failed", "Apple 2FA 验证失败：dial tcp 10.0.0.12:443: i/o timeout", true)
 				}
+				server.appleAccountLogins.setOwner(pending.ID, ownerID, "apple_account")
 				return `{"pending_id":"` + pending.ID + `","code":"123456"}`
 			},
 			wantStatus: http.StatusUnprocessableEntity,
@@ -150,7 +151,7 @@ func TestAppleAccountLoginRoutesReturnJSONForExpectedErrors(t *testing.T) {
 		{
 			name: "2fa returns bad request for invalid input",
 			path: "/api/apple-account/login/2fa",
-			prepare: func(t *testing.T, server *Server) string {
+			prepare: func(t *testing.T, server *Server, ownerID string) string {
 				pending, err := server.appleAccountLogins.put(&appleAuthSession{})
 				if err != nil {
 					t.Fatal(err)
@@ -158,6 +159,7 @@ func TestAppleAccountLoginRoutesReturnJSONForExpectedErrors(t *testing.T) {
 				server.submitAppleAccountManage2FA = func(context.Context, appleAuthPending, string, json.RawMessage) (ICloudSession, error) {
 					return ICloudSession{}, errCode("invalid_2fa_code", "2FA 验证码必须是 6 位", false)
 				}
+				server.appleAccountLogins.setOwner(pending.ID, ownerID, "apple_account")
 				return `{"pending_id":"` + pending.ID + `","code":"123"}`
 			},
 			wantStatus: http.StatusBadRequest,
@@ -168,8 +170,8 @@ func TestAppleAccountLoginRoutesReturnJSONForExpectedErrors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			server := NewServer(Config{}, newTestStore(t), discardLogger()).(*Server)
-			cookie, _ := registerTestUser(t, server, "route-error-"+strings.ReplaceAll(tt.name, " ", "-"), "password")
-			body := tt.prepare(t, server)
+			cookie, user := registerTestUser(t, server, "route-error-"+strings.ReplaceAll(tt.name, " ", "-"), "password")
+			body := tt.prepare(t, server, user.ID)
 			rr := httptest.NewRecorder()
 			req := httptest.NewRequest(http.MethodPost, tt.path, strings.NewReader(body))
 			req.Header.Set("Content-Type", "application/json")
@@ -3514,12 +3516,8 @@ func TestMailboxCodeQuerySyncsBeforeReturningCachedOldCode(t *testing.T) {
 	if got := atomic.LoadInt64(&calls); got != 1 {
 		t.Fatalf("sync calls = %d, want 1", got)
 	}
-	updated, ok := store.FindMailboxByID(mailbox.ID)
-	if !ok {
-		t.Fatal("mailbox missing")
-	}
-	if updated.LastCodeMessageID == "" || updated.LastCodeMessageID != body.MessageID {
-		t.Fatalf("LastCodeMessageID=%q response message_id=%q", updated.LastCodeMessageID, body.MessageID)
+	if body.MessageID == "" {
+		t.Fatal("response message_id is empty")
 	}
 }
 
@@ -3900,7 +3898,7 @@ func TestMailboxCodeQueryReturnsCodeInsertedDuringWaitTimeout(t *testing.T) {
 	}
 }
 
-func TestMailboxCodeQueryDoesNotRepeatServedCachedCode(t *testing.T) {
+func TestMailboxCodeQueryRepeatsFreshCachedCode(t *testing.T) {
 	oldInterval := mailboxMailSyncMinInterval
 	mailboxMailSyncMinInterval = 0
 	t.Cleanup(func() { mailboxMailSyncMinInterval = oldInterval })
@@ -3954,8 +3952,8 @@ func TestMailboxCodeQueryDoesNotRepeatServedCachedCode(t *testing.T) {
 		t.Fatalf("first code = %+v, want 135790", first)
 	}
 	second := requestCode("")
-	if second.Success || second.Code != "no_code" {
-		t.Fatalf("second code = %+v, want no_code without repeating cached OTP", second)
+	if !second.Success || second.Code != "135790" {
+		t.Fatalf("second code = %+v, want repeated fresh 135790", second)
 	}
 	cached := requestCode("&cache=1")
 	if !cached.Success || cached.Code != "135790" {
@@ -3963,7 +3961,7 @@ func TestMailboxCodeQueryDoesNotRepeatServedCachedCode(t *testing.T) {
 	}
 }
 
-func TestMailboxCodePeekDoesNotConsumeServedCode(t *testing.T) {
+func TestMailboxCodePeekMatchesNormalIdempotentRead(t *testing.T) {
 	oldInterval := mailboxMailSyncMinInterval
 	mailboxMailSyncMinInterval = 0
 	t.Cleanup(func() { mailboxMailSyncMinInterval = oldInterval })
@@ -4019,8 +4017,8 @@ func TestMailboxCodePeekDoesNotConsumeServedCode(t *testing.T) {
 		t.Fatalf("public code after peek = %+v, want 246802", firstPublic)
 	}
 	secondPublic := requestCode("")
-	if secondPublic.Success || secondPublic.Code != "no_code" {
-		t.Fatalf("second public code = %+v, want no_code", secondPublic)
+	if !secondPublic.Success || secondPublic.Code != "246802" {
+		t.Fatalf("second public code = %+v, want repeated fresh 246802", secondPublic)
 	}
 	secondPeek := requestCode("&peek=1")
 	if !secondPeek.Success || secondPeek.Code != "246802" {
@@ -4367,7 +4365,7 @@ func TestSyncMailboxCodeBatchStoresIMAPAccountCursor(t *testing.T) {
 	}
 }
 
-func TestSyncMailboxCodeBatchSkipsEmptyMailboxCursorWrites(t *testing.T) {
+func TestSyncMailboxCodeBatchAdvancesCursorForCheckedEmptyResult(t *testing.T) {
 	oldInterval := mailboxMailSyncMinInterval
 	mailboxMailSyncMinInterval = 0
 	t.Cleanup(func() { mailboxMailSyncMinInterval = oldInterval })
@@ -4399,8 +4397,8 @@ func TestSyncMailboxCodeBatchSkipsEmptyMailboxCursorWrites(t *testing.T) {
 	if !ok {
 		t.Fatal("mailbox not found")
 	}
-	if !updated.LastSyncAt.IsZero() {
-		t.Fatalf("LastSyncAt = %s, want zero for empty mailbox sync", updated.LastSyncAt)
+	if updated.LastSyncAt.IsZero() || updated.LastSyncUID != "999" {
+		t.Fatalf("mailbox cursor = %s/%q, want checked UID 999", updated.LastSyncAt, updated.LastSyncUID)
 	}
 	session, ok := store.ICloudSessionForOwnerAccount(ownerID, accountID)
 	if !ok {
@@ -6064,26 +6062,26 @@ func newTestStore(t *testing.T) *FileStore {
 
 func registerTestUser(t *testing.T, handler http.Handler, username, password string) (*http.Cookie, publicUser) {
 	t.Helper()
-	rr := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/auth/register", strings.NewReader(`{"username":"`+username+`","password":"`+password+`"}`))
-	req.Header.Set("Content-Type", "application/json")
-	handler.ServeHTTP(rr, req)
-	if rr.Code != http.StatusCreated {
-		t.Fatalf("register user %s = %d body=%s", username, rr.Code, rr.Body.String())
+	server, ok := handler.(*Server)
+	if !ok {
+		t.Fatalf("register test user requires *Server, got %T", handler)
 	}
-	var body struct {
-		User publicUser `json:"user"`
-	}
-	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
-		t.Fatal(err)
-	}
-	for _, cookie := range rr.Result().Cookies() {
-		if cookie.Name == sessionCookieName && cookie.Value != "" {
-			return cookie, body.User
+	var user User
+	var token string
+	var session WebSession
+	var err error
+	if len(server.store.Users()) == 0 {
+		user, token, session, err = server.store.BootstrapAdmin(username, password, 30*24*time.Hour)
+	} else {
+		user, err = server.store.CreateUser(username, password)
+		if err == nil {
+			token, session, err = server.store.CreateWebSession(user.ID, false, 30*24*time.Hour)
 		}
 	}
-	t.Fatalf("register user %s did not set session cookie", username)
-	return nil, publicUser{}
+	if err != nil {
+		t.Fatalf("create test user %s: %v", username, err)
+	}
+	return &http.Cookie{Name: sessionCookieName, Value: token, Path: "/", Expires: session.ExpiresAt}, publicUserFromUser(user)
 }
 
 func createTestMailboxWithCookie(t *testing.T, handler http.Handler, cookie *http.Cookie, label, email string) publicMailbox {

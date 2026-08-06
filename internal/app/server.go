@@ -11,8 +11,10 @@ import (
 	"hash/fnv"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"regexp"
 	"sort"
 	"strconv"
@@ -29,6 +31,11 @@ const mailboxCreateMinInterval = 3 * time.Second
 const mailboxCreateLimitCooldown = 2 * time.Minute
 const mailboxListDefaultPageSize = 10
 const mailboxListMaxPageSize = 500
+
+const authFailureLimit = 5
+const authBlockDuration = 15 * time.Minute
+const authActionLimit = 3
+const authActionWindow = time.Minute
 
 var mailboxMailSyncMinInterval = 3 * time.Second
 var mailboxCodeFastWait = 600 * time.Millisecond
@@ -94,6 +101,18 @@ type Server struct {
 	updateApplyMu                  sync.Mutex
 	updateCache                    updateCandidate
 	updateCacheAt                  time.Time
+	authLimiter                    *authRateLimiter
+}
+
+type authRateEntry struct {
+	count        int
+	windowStart  time.Time
+	blockedUntil time.Time
+}
+
+type authRateLimiter struct {
+	mu      sync.Mutex
+	entries map[string]authRateEntry
 }
 
 type createMailboxFailure struct {
@@ -164,13 +183,12 @@ type syncICloudMailboxResult struct {
 }
 
 type mailboxCodeWaiter struct {
-	ctx           context.Context
-	mailboxID     string
-	after         time.Time
-	keyword       string
-	forceSync     bool
-	skipMessageID string
-	result        chan mailboxCodeResult
+	ctx       context.Context
+	mailboxID string
+	after     time.Time
+	keyword   string
+	forceSync bool
+	result    chan mailboxCodeResult
 }
 
 type mailboxCodeResult struct {
@@ -204,6 +222,7 @@ type mailboxWatcherIdleWorker struct {
 }
 
 func NewServer(cfg Config, store *FileStore, logger *slog.Logger) http.Handler {
+	_ = dummyPasswordHash()
 	s := &Server{
 		cfg:                           cfg,
 		store:                         store,
@@ -229,6 +248,7 @@ func NewServer(cfg Config, store *FileStore, logger *slog.Logger) http.Handler {
 		appleAccountKeepAliveEnabled:  cfg.AppleAccountKeepAliveEnabled,
 		appleAccountKeepAliveInterval: appleAccountKeepAliveDefaultInterval,
 		mailboxSchedulers:             make(map[string]*mailboxSchedulerJob),
+		authLimiter:                   &authRateLimiter{entries: make(map[string]authRateEntry)},
 	}
 	if cfg.PublicSyncMinIntervalMS > 0 {
 		s.mailboxSyncMinInterval = time.Duration(cfg.PublicSyncMinIntervalMS) * time.Millisecond
@@ -345,10 +365,13 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /login", s.handleLoginPage)
 	s.mux.HandleFunc("GET /manage", s.handleManagePage)
 	s.mux.HandleFunc("GET /api/auth/me", s.handleAuthMe)
+	s.mux.HandleFunc("GET /api/auth/status", s.handleAuthStatus)
+	s.mux.HandleFunc("POST /api/auth/bootstrap", s.handleAuthBootstrap)
 	s.mux.HandleFunc("POST /api/auth/register", s.handleAuthRegister)
 	s.mux.HandleFunc("POST /api/auth/login", s.handleAuthLogin)
 	s.mux.HandleFunc("POST /api/auth/logout", s.handleAuthLogout)
 	s.mux.HandleFunc("DELETE /api/admin/users/{id}", s.handleAdminDeleteUser)
+	s.mux.HandleFunc("POST /api/admin/users", s.handleAdminCreateUser)
 	s.mux.HandleFunc("GET /api/status", s.handleStatus)
 	s.mux.HandleFunc("GET /api/update/status", s.handleUpdateStatus)
 	s.mux.HandleFunc("POST /api/update/apply", s.handleApplyUpdate)
@@ -479,6 +502,58 @@ func (s *Server) writeTemplate(w http.ResponseWriter, name string) {
 }
 
 func (s *Server) handleAuthRegister(w http.ResponseWriter, r *http.Request) {
+	writeError(w, http.StatusForbidden, errCode("registration_closed", "公开注册已关闭，请联系管理员开通账号", false))
+}
+
+func (s *Server) handleAuthStatus(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{"success": true, "needs_bootstrap": len(s.store.Users()) == 0})
+}
+
+func (s *Server) handleAuthBootstrap(w http.ResponseWriter, r *http.Request) {
+	ip := requestClientIP(r)
+	if !s.authLimiter.allowAction("bootstrap:"+ip, time.Now()) {
+		s.logger.Warn("auth_rate_limited", "scope", "bootstrap", "client_ip", ip)
+		writeError(w, http.StatusTooManyRequests, errCode("auth_rate_limited", "请求过于频繁，请稍后重试", true))
+		return
+	}
+	expected := strings.TrimSpace(os.Getenv("IPM_BOOTSTRAP_TOKEN"))
+	presented := ""
+	if authorization := strings.TrimSpace(r.Header.Get("Authorization")); strings.HasPrefix(authorization, "Bearer ") {
+		presented = strings.TrimSpace(strings.TrimPrefix(authorization, "Bearer "))
+	}
+	if expected == "" || !constantTimeEqual(presented, expected) {
+		writeError(w, http.StatusForbidden, errCode("invalid_bootstrap_token", "管理员初始化凭据无效", false))
+		return
+	}
+	var payload struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+	if err := decodeJSON(r, &payload); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	user, token, session, err := s.store.BootstrapAdmin(payload.Username, payload.Password, 30*24*time.Hour)
+	if err != nil {
+		writeError(w, http.StatusConflict, err)
+		return
+	}
+	s.setSessionCookie(w, r, token, session.ExpiresAt)
+	s.logger.Info("bootstrap_completed", "user_id", user.ID)
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"success": true,
+		"user":    publicUserFromUser(user),
+		"message": "管理员初始化完成",
+	})
+}
+
+func (s *Server) handleAdminCreateUser(w http.ResponseWriter, r *http.Request) {
+	ip := requestClientIP(r)
+	if !s.authLimiter.allowAction("create-user:"+ip, time.Now()) {
+		s.logger.Warn("auth_rate_limited", "scope", "admin_user_create", "client_ip", ip)
+		writeError(w, http.StatusTooManyRequests, errCode("auth_rate_limited", "请求过于频繁，请稍后重试", true))
+		return
+	}
 	var payload struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
@@ -492,17 +567,7 @@ func (s *Server) handleAuthRegister(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	token, session, err := s.store.CreateWebSession(user.ID, user.IsAdmin, 30*24*time.Hour)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-	s.setSessionCookie(w, r, token, session.ExpiresAt)
-	writeJSON(w, http.StatusCreated, map[string]any{
-		"success": true,
-		"user":    publicUserFromUser(user),
-		"message": firstNonEmpty(map[bool]string{true: "注册成功，当前账号是管理员", false: "注册成功"}[user.IsAdmin]),
-	})
+	writeJSON(w, http.StatusCreated, map[string]any{"success": true, "user": publicUserFromUser(user)})
 }
 
 func (s *Server) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
@@ -514,16 +579,20 @@ func (s *Server) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	user, err := s.store.AuthenticateUser(payload.Username, payload.Password)
+	username := normalizeUsername(payload.Username)
+	ip := requestClientIP(r)
+	if s.authLimiter.loginBlocked(username, ip, time.Now()) {
+		s.logger.Warn("auth_rate_limited", "scope", "login", "client_ip", ip)
+		writeError(w, http.StatusTooManyRequests, errCode("auth_rate_limited", "登录失败次数过多，请稍后重试", true))
+		return
+	}
+	user, token, session, err := s.store.AuthenticateUserAndCreateSession(username, payload.Password, 30*24*time.Hour)
 	if err != nil {
+		s.authLimiter.recordLoginFailure(username, ip, time.Now())
 		writeError(w, http.StatusUnauthorized, err)
 		return
 	}
-	token, session, err := s.store.CreateWebSession(user.ID, user.IsAdmin, 30*24*time.Hour)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
+	s.authLimiter.recordLoginSuccess(username)
 	s.setSessionCookie(w, r, token, session.ExpiresAt)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"success": true,
@@ -543,7 +612,10 @@ func (s *Server) handleAuthMe(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleAuthLogout(w http.ResponseWriter, r *http.Request) {
 	if cookie, err := r.Cookie(sessionCookieName); err == nil {
-		_ = s.store.DeleteWebSession(cookie.Value)
+		if err := s.store.DeleteWebSession(cookie.Value); err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
 	}
 	s.clearSessionCookie(w, r)
 	writeJSON(w, http.StatusOK, map[string]any{"success": true})
@@ -604,6 +676,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		"icloud_session":     s.publicSessionForRequest(r),
 		"icloud_sessions":    s.publicSessionsForRequest(r),
 		"version":            currentVersionInfo(),
+		"needs_bootstrap":    len(s.store.Users()) == 0,
 	})
 }
 
@@ -1429,6 +1502,7 @@ func (s *Server) handleStartICloudProtocolLogin(w http.ResponseWriter, r *http.R
 		return
 	}
 	if result.Needs2FA {
+		s.icloudProtocolLogins.setOwner(result.PendingID, requestOwnerID(r, s.store), "icloud_protocol")
 		writeJSON(w, http.StatusOK, map[string]any{
 			"success":    true,
 			"needs_2fa":  true,
@@ -1462,21 +1536,33 @@ func (s *Server) handleSubmitICloudProtocol2FA(w http.ResponseWriter, r *http.Re
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	pending, ok := s.icloudProtocolLogins.get(payload.PendingID)
-	if !ok {
+	pending, pendingState := s.icloudProtocolLogins.begin(payload.PendingID, requestOwnerID(r, s.store))
+	if pendingState == "expired" {
 		writeError(w, http.StatusBadRequest, errCode("apple_login_pending_expired", "旧接口登录已过期，请重新输入账号密码发起登录", true))
 		return
 	}
-	session, err := NewAppleAuthClient().Submit2FA(r.Context(), pending, payload.Code)
-	if err != nil {
-		writeError(w, http.StatusBadGateway, err)
+	if pendingState == "in_progress" {
+		writeError(w, http.StatusConflict, errCode("apple_login_in_progress", "Apple 登录正在提交，请稍后重试", true))
 		return
 	}
-	s.icloudProtocolLogins.delete(payload.PendingID)
-	if err := s.store.SaveICloudSessionForOwner(requestOwnerID(r, s.store), session); err != nil {
+	var session ICloudSession
+	if pendingState == applePendingCompleted && pending.Completed != nil {
+		session = cloneICloudSession(*pending.Completed)
+	} else {
+		var err error
+		session, err = NewAppleAuthClient().Submit2FA(r.Context(), pending, payload.Code)
+		if err != nil {
+			s.icloudProtocolLogins.retry(payload.PendingID)
+			writeError(w, http.StatusBadGateway, err)
+			return
+		}
+		s.icloudProtocolLogins.complete(payload.PendingID, session)
+	}
+	if err := s.store.SaveICloudSessionForOwner(pending.OwnerID, session); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
+	s.icloudProtocolLogins.delete(payload.PendingID)
 	sessions := s.publicSessionsForRequest(r)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"success":  true,
@@ -1508,6 +1594,7 @@ func (s *Server) handleStartAppleAccountLogin(w http.ResponseWriter, r *http.Req
 		return
 	}
 	if result.Needs2FA {
+		s.appleAccountLogins.setOwner(result.PendingID, requestOwnerID(r, s.store), "apple_account")
 		writeJSON(w, http.StatusOK, map[string]any{
 			"success":    true,
 			"needs_2fa":  true,
@@ -1542,21 +1629,33 @@ func (s *Server) handleSubmitAppleAccount2FA(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	pending, ok := s.appleAccountLogins.get(payload.PendingID)
-	if !ok {
+	pending, pendingState := s.appleAccountLogins.begin(payload.PendingID, requestOwnerID(r, s.store))
+	if pendingState == "expired" {
 		writeError(w, http.StatusBadRequest, errCode("apple_login_pending_expired", "新接口登录已过期，请重新输入账号密码发起登录", true))
 		return
 	}
-	session, err := s.submitAppleAccountManage2FA(r.Context(), pending, payload.Code, payload.PhoneNumber)
-	if err != nil {
-		s.writeAppleAccountLoginError(w, "2fa", err)
+	if pendingState == "in_progress" {
+		writeError(w, http.StatusConflict, errCode("apple_login_in_progress", "Apple 登录正在提交，请稍后重试", true))
 		return
 	}
-	s.appleAccountLogins.delete(payload.PendingID)
-	if err := s.store.SaveICloudSessionForOwner(requestOwnerID(r, s.store), session); err != nil {
+	var session ICloudSession
+	if pendingState == applePendingCompleted && pending.Completed != nil {
+		session = cloneICloudSession(*pending.Completed)
+	} else {
+		var err error
+		session, err = s.submitAppleAccountManage2FA(r.Context(), pending, payload.Code, payload.PhoneNumber)
+		if err != nil {
+			s.appleAccountLogins.retry(payload.PendingID)
+			s.writeAppleAccountLoginError(w, "2fa", err)
+			return
+		}
+		s.appleAccountLogins.complete(payload.PendingID, session)
+	}
+	if err := s.store.SaveICloudSessionForOwner(pending.OwnerID, session); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
+	s.appleAccountLogins.delete(payload.PendingID)
 	sessions := s.publicSessionsForRequest(r)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"success":  true,
@@ -2359,40 +2458,35 @@ func (s *Server) writeMailboxCode(w http.ResponseWriter, r *http.Request, mailbo
 	codeAfter := mailboxCodeAfter(after, now)
 	allowStale := truthy(r.URL.Query().Get("allow_stale"))
 	cacheOnly := truthy(r.URL.Query().Get("cache"))
-	peekOnly := truthy(r.URL.Query().Get("peek")) || truthy(r.URL.Query().Get("preview"))
-	skipMessageID := strings.TrimSpace(mailbox.LastCodeMessageID)
-	if peekOnly {
-		skipMessageID = ""
-	}
 	messages := s.store.MessagesForMailbox(mailbox.ID)
 	if cacheOnly {
 		if msg, code, ok := latestMailboxCode(messages, codeAfter, keyword, now); ok {
-			s.writeMailboxCodeSuccess(w, mailbox, msg, code, "", false)
+			s.writeMailboxCodeSuccess(w, mailbox, msg, code, "")
 			return
 		}
 		writeError(w, http.StatusOK, errCode("no_code", "暂未收到验证码", true))
 		return
 	}
-	if msg, code, ok := latestMailboxCodeSkipping(messages, codeAfter, keyword, now, skipMessageID); ok {
-		s.writeMailboxCodeSuccess(w, mailbox, msg, code, "", !peekOnly)
+	if msg, code, ok := latestMailboxCode(messages, codeAfter, keyword, now); ok {
+		s.writeMailboxCodeSuccess(w, mailbox, msg, code, "")
 		return
 	}
 
-	result := s.waitMailboxCode(r.Context(), mailbox, codeAfter, keyword, true, skipMessageID, s.mailboxCodeWaitDuration(r))
+	result := s.waitMailboxCode(r.Context(), mailbox, codeAfter, keyword, true, s.mailboxCodeWaitDuration(r))
 	if result.syncErr != nil {
 		s.logger.Warn("icloud sync failed", "mailbox_id", mailbox.ID, "err", result.syncErr)
 	}
 	if result.ok {
-		s.writeMailboxCodeSuccess(w, mailbox, result.message, result.code, staleCacheMessage(result.syncErr), !peekOnly)
+		s.writeMailboxCodeSuccess(w, mailbox, result.message, result.code, staleCacheMessage(result.syncErr))
 		return
 	}
-	if msg, code, ok := latestMailboxCodeSkipping(s.store.MessagesForMailbox(mailbox.ID), codeAfter, keyword, time.Now(), skipMessageID); ok {
-		s.writeMailboxCodeSuccess(w, mailbox, msg, code, staleCacheMessage(result.syncErr), !peekOnly)
+	if msg, code, ok := latestMailboxCode(s.store.MessagesForMailbox(mailbox.ID), codeAfter, keyword, time.Now()); ok {
+		s.writeMailboxCodeSuccess(w, mailbox, msg, code, staleCacheMessage(result.syncErr))
 		return
 	}
 	if result.syncErr != nil && allowStale {
-		if msg, code, ok := latestMailboxCodeSkipping(s.store.MessagesForMailbox(mailbox.ID), codeAfter, keyword, time.Now(), skipMessageID); ok {
-			s.writeMailboxCodeSuccess(w, mailbox, msg, code, "取码同步失败，当前验证码来自本地缓存", !peekOnly)
+		if msg, code, ok := latestMailboxCode(s.store.MessagesForMailbox(mailbox.ID), codeAfter, keyword, time.Now()); ok {
+			s.writeMailboxCodeSuccess(w, mailbox, msg, code, "取码同步失败，当前验证码来自本地缓存")
 			return
 		}
 	}
@@ -2403,14 +2497,7 @@ func (s *Server) writeMailboxCode(w http.ResponseWriter, r *http.Request, mailbo
 	writeError(w, http.StatusOK, errCode("no_code", "暂未收到验证码", true))
 }
 
-func (s *Server) writeMailboxCodeSuccess(w http.ResponseWriter, mailbox Mailbox, msg Message, code string, staleMessage string, markServed bool) {
-	if markServed {
-		if _, err := s.store.SetMailboxLastCode(mailbox.ID, msg.ID, time.Now()); err != nil {
-			s.logger.Warn("remember mailbox code failed", "mailbox_id", mailbox.ID, "message_id", msg.ID, "err", err)
-			writeError(w, http.StatusInternalServerError, errCode("remember_code_failed", "保存验证码发放记录失败，请稍后重试", true))
-			return
-		}
-	}
+func (s *Server) writeMailboxCodeSuccess(w http.ResponseWriter, mailbox Mailbox, msg Message, code string, staleMessage string) {
 	payload := map[string]any{
 		"success":     true,
 		"email":       mailbox.Email,
@@ -2445,15 +2532,10 @@ func mailboxCodeAfter(after, now time.Time) time.Time {
 }
 
 func latestMailboxCode(messages []Message, after time.Time, keyword string, now time.Time) (Message, string, bool) {
-	return latestMailboxCodeSkipping(messages, after, keyword, now, "")
-}
-
-func latestMailboxCodeSkipping(messages []Message, after time.Time, keyword string, now time.Time, skipMessageID string) (Message, string, bool) {
 	keyword = strings.TrimSpace(keyword)
 	if keyword == "" {
 		keyword = "OpenAI"
 	}
-	skipMessageID = strings.TrimSpace(skipMessageID)
 	after = mailboxCodeAfter(after, now)
 	sort.SliceStable(messages, func(i, j int) bool {
 		left := firstNonZeroTime(messages[i].ReceivedAt, messages[i].CreatedAt)
@@ -2461,9 +2543,6 @@ func latestMailboxCodeSkipping(messages []Message, after time.Time, keyword stri
 		return left.After(right)
 	})
 	for _, msg := range messages {
-		if skipMessageID != "" && msg.ID == skipMessageID {
-			continue
-		}
 		msgTime := firstNonZeroTime(msg.ReceivedAt, msg.CreatedAt)
 		if msgTime.IsZero() || msgTime.Before(after) {
 			continue
@@ -2505,7 +2584,7 @@ func (s *Server) mailboxCodeWaitDuration(r *http.Request) time.Duration {
 	return time.Duration(waitMS) * time.Millisecond
 }
 
-func (s *Server) waitMailboxCode(ctx context.Context, mailbox Mailbox, after time.Time, keyword string, forceSync bool, skipMessageID string, waitDuration time.Duration) mailboxCodeResult {
+func (s *Server) waitMailboxCode(ctx context.Context, mailbox Mailbox, after time.Time, keyword string, forceSync bool, waitDuration time.Duration) mailboxCodeResult {
 	waitCtx := context.Background()
 	var requestDone <-chan struct{}
 	if ctx != nil {
@@ -2513,13 +2592,12 @@ func (s *Server) waitMailboxCode(ctx context.Context, mailbox Mailbox, after tim
 		requestDone = ctx.Done()
 	}
 	waiter := &mailboxCodeWaiter{
-		ctx:           waitCtx,
-		mailboxID:     mailbox.ID,
-		after:         after,
-		keyword:       keyword,
-		forceSync:     forceSync,
-		skipMessageID: skipMessageID,
-		result:        make(chan mailboxCodeResult, 1),
+		ctx:       waitCtx,
+		mailboxID: mailbox.ID,
+		after:     after,
+		keyword:   keyword,
+		forceSync: forceSync,
+		result:    make(chan mailboxCodeResult, 1),
 	}
 	ownerKey := mailboxSyncOwnerKey(mailbox.OwnerID)
 	s.mailboxCodeMu.Lock()
@@ -2659,7 +2737,7 @@ func deliverMailboxCodeResult(waiter *mailboxCodeWaiter, result mailboxCodeResul
 }
 
 func (s *Server) latestMailboxCodeForWaiter(waiter *mailboxCodeWaiter) (Message, string, bool) {
-	return latestMailboxCodeSkipping(s.store.MessagesForMailbox(waiter.mailboxID), waiter.after, waiter.keyword, time.Now(), waiter.skipMessageID)
+	return latestMailboxCode(s.store.MessagesForMailbox(waiter.mailboxID), waiter.after, waiter.keyword, time.Now())
 }
 
 func (s *Server) syncMailboxesForCodeWaiters(ctx context.Context, ownerID string, waiters []*mailboxCodeWaiter) error {
@@ -3249,49 +3327,31 @@ func (s *Server) syncMailboxCodeBatchForOwnerWithLimit(ctx context.Context, owne
 		if messagesByMailbox == nil {
 			messagesByMailbox = map[string][]ICloudSyncedMessage{}
 		}
-		lastAccountUID := firstNonEmpty(syncResult.LastUID, highestICloudMessageUID(messagesByMailbox))
+		lastAccountUID := strings.TrimSpace(syncResult.LastUID)
+		updates := make([]MailboxSyncUpdate, 0, len(group.mailboxes))
 		for _, mailbox := range group.mailboxes {
-			lastSyncUID := mailbox.LastSyncUID
-			latestMessageAt := mailbox.LastSyncAt
-			mailboxChanged := false
+			messages := make([]ICloudSyncedMessage, 0, len(messagesByMailbox[mailbox.ID]))
 			for _, msg := range messagesByMailbox[mailbox.ID] {
 				if extractOTP(msg.Subject+"\n"+msg.Body) == "" {
 					continue
 				}
-				remoteID := strings.TrimSpace(msg.RemoteID)
-				if remoteID == "" && strings.TrimSpace(msg.UID) != "" {
-					remoteID = "imap:" + strings.TrimSpace(msg.UID)
-				}
-				_, created, err := s.store.UpsertMessage(mailbox.ID, remoteID, "imap", msg.Subject, msg.From, msg.Body, msg.ReceivedAt)
-				if err != nil {
-					return synced, err
-				}
-				if created {
-					synced++
-					mailboxChanged = true
-				}
-				candidateUID := firstNonEmpty(msg.UID, remoteID)
-				if msg.ReceivedAt.After(latestMessageAt) {
-					latestMessageAt = msg.ReceivedAt
-					lastSyncUID = candidateUID
-					mailboxChanged = true
-				} else if strings.TrimSpace(lastSyncUID) == "" && strings.TrimSpace(candidateUID) != "" {
-					lastSyncUID = candidateUID
-					mailboxChanged = true
-				}
+				messages = append(messages, msg)
 			}
-			if mailboxChanged {
-				syncedAt := latestMessageAt
-				if syncedAt.IsZero() {
-					syncedAt = now
-				}
-				if _, err := s.store.SetMailboxSyncCursor(mailbox.ID, syncedAt, lastSyncUID); err != nil {
-					return synced, err
-				}
-			}
+			updates = append(updates, MailboxSyncUpdate{MailboxID: mailbox.ID, Source: "imap", Messages: messages, SyncedAt: now, LastUID: lastAccountUID})
 		}
-		if _, err := s.store.SetICloudIMAPSyncCursor(ownerID, group.session.AccountID, imapStateKey(group.state), now, lastAccountUID); err != nil {
+		created, err := s.store.CommitMailboxSync(ownerID, updates, &IMAPSyncCursorUpdate{
+			AccountID: group.session.AccountID,
+			StateKey:  imapStateKey(group.state),
+			SyncedAt:  now,
+			LastUID:   lastAccountUID,
+		})
+		if err != nil {
 			return synced, err
+		}
+		synced += created
+		if syncResult.Backlog {
+			s.logger.Info("imap_backlog_remaining", "owner_id", ownerID, "account_id", group.session.AccountID)
+			s.pokeMailWatcher()
 		}
 	}
 	return synced, nil
@@ -3363,25 +3423,21 @@ func (s *Server) syncMailboxBatchForOwnerWithLimit(ctx context.Context, ownerID 
 		if err != nil {
 			return err
 		}
+		updates := make([]MailboxSyncUpdate, 0, len(group.mailboxes))
 		for _, mailbox := range group.mailboxes {
 			lastSyncUID := mailbox.LastSyncUID
-			latestMessageAt := mailbox.LastSyncAt
+			messages := make([]ICloudSyncedMessage, 0, len(messagesByMailbox[mailbox.ID]))
 			for _, msg := range messagesByMailbox[mailbox.ID] {
 				if extractOTP(msg.Subject+"\n"+msg.Body) == "" {
 					continue
 				}
-				_, _, err := s.store.UpsertMessage(mailbox.ID, msg.RemoteID, "icloud", msg.Subject, msg.From, msg.Body, msg.ReceivedAt)
-				if err != nil {
-					return err
-				}
-				if msg.ReceivedAt.After(latestMessageAt) {
-					latestMessageAt = msg.ReceivedAt
-					lastSyncUID = firstNonEmpty(msg.UID, msg.RemoteID)
-				}
+				messages = append(messages, msg)
+				lastSyncUID = firstNonEmpty(msg.UID, msg.RemoteID, lastSyncUID)
 			}
-			if _, err := s.store.SetMailboxSyncCursor(mailbox.ID, now, lastSyncUID); err != nil {
-				return err
-			}
+			updates = append(updates, MailboxSyncUpdate{MailboxID: mailbox.ID, Source: "icloud", Messages: messages, SyncedAt: now, LastUID: lastSyncUID})
+		}
+		if _, err := s.store.CommitMailboxSync(ownerID, updates, nil); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -4264,6 +4320,73 @@ func (s *Server) requiresAdmin(r *http.Request) bool {
 	return strings.HasPrefix(r.URL.Path, "/api/")
 }
 
+func (l *authRateLimiter) loginBlocked(username, ip string, now time.Time) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for _, key := range []string{"login-user:" + normalizeUsername(username), "login-ip:" + ip} {
+		entry := l.entries[key]
+		if entry.blockedUntil.After(now) {
+			return true
+		}
+	}
+	return false
+}
+
+func (l *authRateLimiter) recordLoginFailure(username, ip string, now time.Time) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for _, key := range []string{"login-user:" + normalizeUsername(username), "login-ip:" + ip} {
+		entry := l.entries[key]
+		if entry.windowStart.IsZero() || now.Sub(entry.windowStart) >= authBlockDuration {
+			entry = authRateEntry{windowStart: now}
+		}
+		entry.count++
+		if entry.count >= authFailureLimit {
+			entry.blockedUntil = now.Add(authBlockDuration)
+		}
+		l.entries[key] = entry
+	}
+}
+
+func (l *authRateLimiter) recordLoginSuccess(username string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	delete(l.entries, "login-user:"+normalizeUsername(username))
+}
+
+func (l *authRateLimiter) allowAction(key string, now time.Time) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	entry := l.entries[key]
+	if entry.windowStart.IsZero() || now.Sub(entry.windowStart) >= authActionWindow {
+		entry = authRateEntry{windowStart: now}
+	}
+	if entry.count >= authActionLimit {
+		return false
+	}
+	entry.count++
+	l.entries[key] = entry
+	return true
+}
+
+func requestClientIP(r *http.Request) string {
+	host := strings.TrimSpace(r.RemoteAddr)
+	if parsedHost, _, err := net.SplitHostPort(host); err == nil {
+		host = parsedHost
+	}
+	direct := net.ParseIP(strings.Trim(host, "[]"))
+	if direct == nil {
+		return "unknown"
+	}
+	if direct.IsLoopback() {
+		forwarded := strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-For"), ",")[0])
+		if parsed := net.ParseIP(forwarded); parsed != nil {
+			return parsed.String()
+		}
+	}
+	return direct.String()
+}
+
 func constantTimeEqual(candidate, want string) bool {
 	candidate = strings.TrimSpace(candidate)
 	want = strings.TrimSpace(want)
@@ -4688,10 +4811,23 @@ func firstMap(rows []map[string]any) map[string]any {
 
 func decodeJSON(r *http.Request, target any) error {
 	defer r.Body.Close()
-	limited := io.LimitReader(r.Body, 1<<20)
-	decoder := json.NewDecoder(limited)
+	const maxJSONBody = 1 << 20
+	data, err := io.ReadAll(io.LimitReader(r.Body, maxJSONBody+1))
+	if err != nil {
+		return errCode("bad_json", "JSON 请求体非法："+err.Error(), false)
+	}
+	if len(data) > maxJSONBody {
+		return errCode("request_too_large", "JSON 请求体超过 1 MiB 限制", false)
+	}
+	decoder := json.NewDecoder(strings.NewReader(string(data)))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); err != nil {
+		return errCode("bad_json", "JSON 请求体非法："+err.Error(), false)
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		if err == nil {
+			err = errors.New("存在多个 JSON 值")
+		}
 		return errCode("bad_json", "JSON 请求体非法："+err.Error(), false)
 	}
 	return nil

@@ -122,10 +122,20 @@ type appleAccountInfo struct {
 
 type appleAuthPending struct {
 	ID        string
+	OwnerID   string
+	Flow      string
+	State     string
 	Session   *appleAuthSession
+	Completed *ICloudSession
 	CreatedAt time.Time
 	ExpiresAt time.Time
 }
+
+const (
+	applePendingWaiting    = "waiting"
+	applePendingSubmitting = "submitting"
+	applePendingCompleted  = "completed"
+)
 
 type appleAuthPendingStore struct {
 	mu    sync.Mutex
@@ -148,7 +158,8 @@ func (s *appleAuthPendingStore) put(session *appleAuthSession) (appleAuthPending
 	now := time.Now()
 	pending := appleAuthPending{
 		ID:        id,
-		Session:   session,
+		State:     applePendingWaiting,
+		Session:   cloneAppleAuthSession(session),
 		CreatedAt: now,
 		ExpiresAt: now.Add(10 * time.Minute),
 	}
@@ -165,7 +176,65 @@ func (s *appleAuthPendingStore) get(id string) (appleAuthPending, bool) {
 	defer s.mu.Unlock()
 	s.cleanupLocked(now)
 	pending, ok := s.items[strings.TrimSpace(id)]
-	return pending, ok
+	return cloneAppleAuthPending(pending), ok
+}
+
+func (s *appleAuthPendingStore) setOwner(id, ownerID, flow string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	pending, ok := s.items[strings.TrimSpace(id)]
+	if !ok {
+		return false
+	}
+	pending.OwnerID = strings.TrimSpace(ownerID)
+	pending.Flow = strings.TrimSpace(flow)
+	s.items[pending.ID] = pending
+	return true
+}
+
+func (s *appleAuthPendingStore) begin(id, ownerID string) (appleAuthPending, string) {
+	now := time.Now()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.cleanupLocked(now)
+	id = strings.TrimSpace(id)
+	pending, ok := s.items[id]
+	if !ok || !constantTimeEqual(strings.TrimSpace(ownerID), pending.OwnerID) {
+		return appleAuthPending{}, "expired"
+	}
+	switch pending.State {
+	case applePendingSubmitting:
+		return appleAuthPending{}, "in_progress"
+	case applePendingCompleted:
+		return cloneAppleAuthPending(pending), applePendingCompleted
+	default:
+		pending.State = applePendingSubmitting
+		s.items[id] = pending
+		return cloneAppleAuthPending(pending), applePendingSubmitting
+	}
+}
+
+func (s *appleAuthPendingStore) retry(id string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	pending, ok := s.items[strings.TrimSpace(id)]
+	if ok && pending.State == applePendingSubmitting {
+		pending.State = applePendingWaiting
+		s.items[pending.ID] = pending
+	}
+}
+
+func (s *appleAuthPendingStore) complete(id string, session ICloudSession) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	pending, ok := s.items[strings.TrimSpace(id)]
+	if !ok {
+		return
+	}
+	completed := cloneICloudSession(session)
+	pending.Completed = &completed
+	pending.State = applePendingCompleted
+	s.items[pending.ID] = pending
 }
 
 func (s *appleAuthPendingStore) delete(id string) {
@@ -180,6 +249,26 @@ func (s *appleAuthPendingStore) cleanupLocked(now time.Time) {
 			delete(s.items, id)
 		}
 	}
+}
+
+func cloneAppleAuthPending(pending appleAuthPending) appleAuthPending {
+	out := pending
+	out.Session = cloneAppleAuthSession(pending.Session)
+	if pending.Completed != nil {
+		completed := cloneICloudSession(*pending.Completed)
+		out.Completed = &completed
+	}
+	return out
+}
+
+func cloneAppleAuthSession(session *appleAuthSession) *appleAuthSession {
+	if session == nil {
+		return nil
+	}
+	out := *session
+	out.Cookies = append([]SessionCookie(nil), session.Cookies...)
+	out.TwoFactorPhone = append(json.RawMessage(nil), session.TwoFactorPhone...)
+	return &out
 }
 
 func (c *AppleAuthClient) StartLogin(ctx context.Context, appleID, password, defaultHost, clientID string, pendingStore *appleAuthPendingStore, twoFactorMethod string) (appleAuthStartResult, error) {
