@@ -46,10 +46,13 @@ check_sel manage.html 'data-view'                         'manage: [data-view]'
 check_sel manage.html 'class="[^"]*account-card'          'manage: .account-card'
 
 echo "== DESIGN.md 验收：装饰清除 =="
-grad=$(grep -ho "gradient" "$T"/*.html | wc -l | tr -d ' ')
-expect_count "gradient 总数" "$grad" 0
-bdf=$(grep -ho "backdrop-filter" "$T"/*.html | wc -l | tr -d ' ')
-if [ "$bdf" -le 1 ]; then pass "backdrop-filter ($bdf ≤ 1，仅允许粘性顶栏)"; else fail "backdrop-filter: $bdf 处，最多允许 1"; fi
+# 只统计真实声明，排除 CSS 注释行（注释里提到被移除的属性名不算违规）
+decls() { grep -hoE "^[^/*]*\b$1\b" "$T"/*.html | grep -vE "^\s*(/\*|\*)" | wc -l | tr -d ' '; }
+grad=$(decls "gradient")
+expect_count "gradient 声明数" "$grad" 0
+bdf=$(grep -hoE "^\s+-?(webkit-)?backdrop-filter:" "$T"/*.html | wc -l | tr -d ' ')
+# 顶栏同时需要 backdrop-filter 与 -webkit- 前缀版本，故允许 2 条声明
+if [ "$bdf" -le 2 ]; then pass "backdrop-filter ($bdf ≤ 2，仅允许粘性顶栏及其前缀)"; else fail "backdrop-filter: $bdf 处声明，最多允许 2"; fi
 hl=$(grep -hoE "inset 0 1px 0 rgba\(255" "$T"/*.html | wc -l | tr -d ' ')
 expect_count "假高光 inset highlight" "$hl" 0
 
