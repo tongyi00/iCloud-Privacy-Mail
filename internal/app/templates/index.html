@@ -7,8 +7,8 @@
   <style>
     /* ===== 设计令牌层：依据 docs/DESIGN.md 第 3 节 =====
        语义化命名，主题只覆盖语义层，组件层不感知主题。
-       文件末尾的兼容别名把历史变量名（--green/--line/--card 等）映射到本层，
-       供尚未改写的组件规则使用。 */
+       历史别名（--green/--line/--glass 等）已全部清除，
+       新增样式只能引用本层令牌，不得再引入别名或裸值。 */
     :root {
       color-scheme: light;
 
@@ -120,60 +120,6 @@
       --shadow-dropdown: 0 4px 12px oklch(0% 0 0 / 0.4);
       --shadow-modal:    0 16px 40px oklch(0% 0 0 / 0.5);
     }
-    /* ===== 兼容别名层 =====
-       把历史变量名映射到语义令牌，使尚未改写的组件规则继续生效。
-       阶段2-4 会逐步消除对这些别名的引用；新增样式一律直接用语义令牌。
-       注意：--surface-rgb 供残留的 rgb(var(--surface-rgb)/x) 写法兜底，
-       浅色为白、深色为面板灰，避免这些写法在暗色下透出白块。 */
-    :root {
-      --surface-rgb: 255 255 255;
-      --panel: var(--surface);
-      --panel-2: var(--surface-sunken);
-      --card: var(--surface);
-      --bg-soft: var(--bg);
-      --text: var(--fg);
-      --ink: var(--fg);
-      --ink-soft: var(--fg-secondary);
-      --faint: var(--muted);
-      --line: var(--border);
-      --line-strong: var(--border-strong);
-      /* 品牌色别名：原 --green 在旧实现里随主题变色，语义已归一到 --accent */
-      --green: var(--accent);
-      --green-2: var(--accent-text);
-      --on-accent: var(--accent-fg);
-      --count-bg: var(--neutral-bg);
-      --th-bg: var(--surface-sunken);
-      --log-bg: var(--surface-sunken);
-      --log-ink: var(--fg-secondary);
-      --ok: var(--success);
-      --ok-soft: var(--success-bg);
-      --ok-line: var(--success-border);
-      --warn: var(--warning);
-      --warn-soft: var(--warning-bg);
-      --warn-line: var(--warning-border);
-      --bad: var(--danger);
-      --bad-soft: var(--danger-bg);
-      --bad-line: var(--danger-border);
-      --amber: var(--warning);
-      --red: var(--danger);
-      /* 页面内元素不再投影，别名置空；浮层改用 --shadow-modal/--shadow-dropdown */
-      --shadow: none;
-      --shadow-strong: none;
-      /* 表面一律实色，玻璃别名全部退化为实色 */
-      --soft-glass: var(--surface);
-      --glass: var(--surface);
-      --glass-strong: var(--surface);
-      --glass-soft: var(--surface);
-      --glass-hi: var(--surface);
-      --glass-line: var(--border);
-      --sidebar-bg: var(--surface);
-      --head-bg: var(--surface);
-      --input-bg: var(--surface);
-    }
-    [data-theme="dark"] {
-      --surface-rgb: 40 44 52;
-    }
-
     * { box-sizing: border-box; }
     body {
       margin: 0;
@@ -187,48 +133,63 @@
       width: 100%;
       min-height: 100vh;
       display: grid;
-      grid-template-columns: 286px minmax(0, 1fr);
-      gap: 14px;
-      padding: 14px;
+      /* 侧栏 240px：只有 5 个导航项，多余宽度让给邮箱池表格 */
+      grid-template-columns: 240px minmax(0, 1fr);
+      gap: var(--space-4);
+      padding: var(--space-4);
     }
     .sidebar {
       position: sticky;
-      top: 14px;
-      height: calc(100vh - 28px);
+      top: var(--space-4);
+      height: calc(100vh - var(--space-8));
       overflow: auto;
-      padding: 14px;
+      padding: var(--space-4);
       background: var(--surface);
       color: var(--fg);
       border: 1px solid var(--border);
       border-radius: var(--radius-lg);
+      display: grid;
+      grid-template-rows: auto auto 1fr auto;
+      gap: var(--space-4);
+      align-content: start;
     }
+    /* 品牌区不再是嵌套卡片，只用下边框分隔，避免卡片套卡片的双层框线 */
     .brand {
       display: grid;
-      gap: 6px;
-      padding: 14px;
-      margin-bottom: 12px;
-      border: 1px solid var(--border);
-      border-radius: var(--radius-lg);
-      background: var(--surface);
+      gap: var(--space-1);
+      padding: 0 0 var(--space-4);
+      border-bottom: 1px solid var(--border);
     }
-    h1 { margin: 0; font-size: 22px; line-height: 1.12; }
-    h2 { margin: 0; font-size: 18px; }
-    .sub { color: var(--muted); margin-top: 7px; line-height: 1.6; }
+    h1 { margin: 0; font-size: 20px; line-height: 1.3; font-weight: 600; letter-spacing: -0.015em; }
+    h2 { margin: 0; font-size: 16px; line-height: 1.5; font-weight: 600; letter-spacing: -0.01em; }
+    h3 { margin: 0; font-size: 14px; line-height: 1.5; font-weight: 600; }
+    .sub { color: var(--muted); margin-top: var(--space-1); line-height: 1.6; font-size: 13px; }
     .sidebar .sub { color: var(--muted); margin-top: 0; font-size: 13px; }
-    .eyebrow { color: var(--muted); font-size: 12px; font-weight: 500; margin: 0; }
-    .user-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-    .side-nav { display: grid; gap: 9px; padding: 4px 0; }
+    .user-actions { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2); }
+    .side-nav { display: grid; gap: var(--space-1); padding: 0; align-content: start; }
+    /* 侧栏底部存储声明：一句话建立安全感，说明凭据不出本机 */
+    .side-footnote {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.6;
+      padding-top: var(--space-3);
+      border-top: 1px solid var(--border);
+      display: flex;
+      gap: var(--space-2);
+      align-items: flex-start;
+    }
+    .side-footnote svg { width: 14px; height: 14px; flex: 0 0 auto; margin-top: 2px; }
     .nav-item {
       width: 100%;
       display: grid;
       grid-template-columns: 28px 1fr auto;
       align-items: center;
-      gap: 9px;
+      gap: var(--space-2);
       border: 1px solid transparent;
       background: transparent;
       color: var(--fg-secondary);
       text-align: left;
-      padding: 10px;
+      padding: var(--space-3);
       border-radius: var(--radius-md);
       font-weight: 500;
     }
@@ -244,7 +205,7 @@
     .nav-item .count-dot {
       min-width: 24px;
       height: 22px;
-      padding: 0 7px;
+      padding: 0 var(--space-2);
       display: inline-flex;
       align-items: center;
       justify-content: center;
@@ -258,47 +219,47 @@
     .tool-panel-grid {
       display: grid;
       grid-template-columns: repeat(3, minmax(220px, 1fr));
-      gap: 12px;
-      padding: 16px 18px;
+      gap: var(--space-3);
+      padding: var(--space-5) var(--space-6);
     }
     .tool-panel-group {
       display: grid;
-      gap: 8px;
+      gap: var(--space-2);
       align-content: start;
-      padding: 12px;
+      padding: var(--space-3);
       border: 1px solid var(--border);
       border-radius: var(--radius-md);
       background: var(--surface);
     }
     .tool-panel-label { color: var(--fg-secondary); font-size: 13px; font-weight: 500; }
     .tool-panel-group select, .tool-panel-group button { width: 100%; }
-    .tool-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-    .hero-actions select.export-format, .toolbar select.export-format { width: 100%; min-width: 0; padding: 10px 12px; }
-    .hero-actions select.export-account, .toolbar select.export-account { width: 100%; min-width: 0; max-width: none; padding: 10px 12px; }
-    .content { min-width: 0; display: grid; grid-template-rows: auto 1fr auto; gap: 14px; }
+    .tool-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2); }
+    .hero-actions select.export-format, .toolbar select.export-format { width: 100%; min-width: 0; padding: var(--space-2) var(--space-3); }
+    .hero-actions select.export-account, .toolbar select.export-account { width: 100%; min-width: 0; max-width: none; padding: var(--space-2) var(--space-3); }
+    .content { min-width: 0; display: grid; grid-template-rows: auto 1fr auto; gap: var(--space-4); }
     .content-head {
       position: sticky;
       top: 14px;
       z-index: 8;
       display: flex;
       justify-content: space-between;
-      gap: 18px;
+      gap: var(--space-4);
       align-items: center;
       padding: var(--space-5) var(--space-6);
       border: 1px solid var(--border);
       border-radius: var(--radius-lg);
       background: var(--surface);
     }
-    .content-head .sub { margin-top: 5px; }
-    .content-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 10px; }
+    .content-head .sub { margin-top: var(--space-1); }
+    .content-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: var(--space-3); }
     /* 用户菜单：顶栏只留主操作，其余设置收进这个下拉 */
     .user-menu { position: relative; }
     .user-menu-trigger {
       display: inline-flex;
       align-items: center;
-      gap: 6px;
+      gap: var(--space-2);
       min-height: 32px;
-      padding: 0 8px 0 4px;
+      padding: 0 var(--space-2) 0 var(--space-1);
       border-radius: var(--radius-md);
       font-size: 13px;
       font-weight: 500;
@@ -350,15 +311,15 @@
     .segmented {
       display: inline-flex;
       align-items: center;
-      gap: 4px;
-      padding: 3px;
+      gap: var(--space-1);
+      padding: var(--space-1);
       border: 1px solid var(--border);
       border-radius: var(--radius-md);
       background: var(--surface-sunken);
     }
     .segmented button {
       min-height: 28px;
-      padding: 0 10px;
+      padding: 0 var(--space-3);
       border: 0;
       border-radius: var(--radius-sm);
       color: var(--muted);
@@ -375,7 +336,7 @@
     .user-badge {
       min-width: 0;
       max-width: 160px;
-      padding: 0 4px;
+      padding: 0 var(--space-1);
       color: var(--fg-secondary);
       font-size: 13px;
       font-weight: 500;
@@ -386,7 +347,7 @@
     }
     .version-badge {
       max-width: 260px;
-      padding: 0 8px;
+      padding: 0 var(--space-2);
       min-height: 22px;
       display: inline-flex;
       align-items: center;
@@ -427,7 +388,7 @@
       background: var(--surface);
     }
     .login-group-head h3 { margin: 0; font-size: 14px; line-height: 20px; font-weight: 600; }
-    .login-group-head p { margin: 4px 0 0; color: var(--muted); font-size: 12px; line-height: 18px; }
+    .login-group-head p { margin: var(--space-1) 0 0; color: var(--muted); font-size: 12px; line-height: 18px; }
     .login-group .toolbar { padding: 0; }
     /* 危险区：用红色边框与浅红底与常规区域区分，不使用渐变或大阴影 */
     .danger-zone {
@@ -438,7 +399,7 @@
       background: var(--danger-bg);
     }
     .danger-zone-head h3 { margin: 0; color: var(--danger); font-size: 14px; line-height: 20px; font-weight: 600; }
-    .danger-zone-head p { margin: 4px 0 0; color: var(--fg-secondary); font-size: 12px; line-height: 18px; }
+    .danger-zone-head p { margin: var(--space-1) 0 0; color: var(--fg-secondary); font-size: 12px; line-height: 18px; }
     .danger-zone-row {
       display: flex;
       flex-wrap: wrap;
@@ -449,55 +410,110 @@
       padding-top: var(--space-3);
       border-top: 1px solid var(--danger-border);
     }
-    .danger-zone-desc { display: grid; gap: 2px; min-width: 0; }
+    .danger-zone-desc { display: grid; gap: var(--space-1); min-width: 0; }
     .danger-zone-desc strong { color: var(--fg); font-size: 13px; line-height: 18px; font-weight: 600; }
     .danger-zone-desc span { color: var(--fg-secondary); font-size: 12px; line-height: 18px; }
     .content-main { padding: 0; }
-    .global-log-panel {
-      margin: 0;
+
+    /* ===== 概览页：快速取码 ===== */
+    .quick-code-panel { margin-bottom: var(--space-4); }
+    .quick-code-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: var(--space-3);
+      align-items: end;
+      padding: var(--space-5) var(--space-6);
     }
-    .global-log-panel[hidden] { display: none; }
+    .quick-code-field { display: grid; gap: var(--space-1); min-width: 0; }
+    .quick-code-field > span {
+      color: var(--fg-secondary);
+      font-size: 13px;
+      line-height: 18px;
+      font-weight: 500;
+    }
+    .quick-code-result {
+      display: grid;
+      gap: var(--space-2);
+      margin: 0 var(--space-6) var(--space-5);
+      padding: var(--space-4);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      background: var(--surface-sunken);
+    }
+    .quick-code-result[hidden] { display: none; }
+    .quick-code-result.ok { border-color: var(--success-border); background: var(--success-bg); }
+    .quick-code-result.err { border-color: var(--danger-border); background: var(--danger-bg); }
+    .quick-code-result-head {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-3);
+    }
+    .quick-code-value {
+      font-family: var(--font-mono);
+      font-size: 16px;
+      line-height: 20px;
+      font-weight: 500;
+      letter-spacing: 0.02em;
+      color: var(--accent-text);
+      font-variant-numeric: tabular-nums;
+    }
+    .quick-code-meta {
+      color: var(--fg-secondary);
+      font-size: 12px;
+      line-height: 18px;
+      overflow-wrap: anywhere;
+    }
+    .quick-code-result.err .quick-code-meta { color: var(--danger); }
+
+    /* ===== 概览页：最近活动 ===== */
+    .activity-list { display: grid; }
+    .activity-row {
+      display: grid;
+      grid-template-columns: 76px minmax(0, 1fr) auto;
+      gap: var(--space-3);
+      align-items: center;
+      padding: var(--space-3) var(--space-6);
+      border-top: 1px solid var(--border);
+    }
+    .activity-row:first-child { border-top: 0; }
+    .activity-time {
+      color: var(--muted);
+      font-family: var(--font-mono);
+      font-size: 12px;
+      line-height: 18px;
+      font-variant-numeric: tabular-nums;
+    }
+    .activity-text {
+      color: var(--fg);
+      font-size: 13px;
+      line-height: 20px;
+      overflow-wrap: anywhere;
+    }
+    .activity-empty {
+      display: grid;
+      gap: var(--space-2);
+      justify-items: start;
+      padding: var(--space-8) var(--space-6);
+    }
+    .activity-empty strong { color: var(--fg); font-size: 16px; line-height: 24px; font-weight: 600; }
+    .activity-empty span { color: var(--muted); font-size: 13px; line-height: 20px; }
     .log-panel-head {
       display: flex;
       justify-content: space-between;
       align-items: flex-start;
-      gap: 14px;
+      gap: var(--space-4);
       flex-wrap: wrap;
     }
-    /* 折叠触发器做成整行可点击，标题即开关 */
-    .log-toggle {
-      display: inline-flex;
-      align-items: center;
-      gap: var(--space-2);
-      min-height: 32px;
-      padding: 0 var(--space-2) 0 4px;
-      border: 0;
-      border-radius: var(--radius-md);
-      background: transparent;
-      color: var(--fg);
-      font-size: 16px;
-      line-height: 24px;
-      font-weight: 600;
-      text-align: left;
-    }
-    .log-toggle:hover { background: var(--surface-hover); }
-    .log-toggle-caret {
-      width: 18px;
-      height: 18px;
-      color: var(--muted);
-      flex: none;
-      transition: transform var(--dur) var(--ease);
-    }
-    /* 展开时箭头转向下方，指示当前状态 */
-    .log-toggle[aria-expanded="true"] .log-toggle-caret { transform: rotate(90deg); }
-    .log-toggle-hint { color: var(--muted); font-size: 12px; line-height: 18px; font-weight: 400; }
+    .log-panel-head p { margin: var(--space-1) 0 0; color: var(--muted); font-size: 13px; line-height: 20px; }
     .log-tabs {
       display: inline-flex;
       flex-wrap: wrap;
-      gap: 6px;
+      gap: var(--space-2);
     }
     .log-tabs button {
-      padding: 0 10px;
+      padding: 0 var(--space-3);
       min-height: 28px;
       border-radius: var(--radius-md);
       font-size: 13px;
@@ -511,18 +527,18 @@
     .global-log { min-height: 260px; max-height: 380px; }
     .view-section { display: none; }
     .view-section.active { display: block; }
-    .grid { display: grid; grid-template-columns: repeat(4, minmax(160px, 1fr)); gap: 14px; margin-bottom: 14px; }
+    .grid { display: grid; grid-template-columns: repeat(4, minmax(160px, 1fr)); gap: var(--space-4); margin-bottom: var(--space-4); }
     .card {
       border: 1px solid var(--border);
       border-radius: var(--radius-lg);
       padding: var(--space-5);
       background: var(--surface);
     }
-    .card strong { display: block; color: var(--fg); font-size: 30px; line-height: 34px; font-weight: 600; margin-bottom: 8px; }
+    .card strong { display: block; color: var(--fg); font-size: 30px; line-height: 34px; font-weight: 600; margin-bottom: var(--space-2); }
     .card span { color: var(--muted); font-size: 12px; }
-    .layout { display: grid; gap: 18px; align-items: start; }
-    .workflow { display: grid; gap: 18px; align-items: stretch; }
-    .stack { display: grid; gap: 18px; }
+    .layout { display: grid; gap: var(--space-4); align-items: start; }
+    .workflow { display: grid; gap: var(--space-4); align-items: stretch; }
+    .stack { display: grid; gap: var(--space-4); }
     .panel {
       border: 1px solid var(--border);
       border-radius: var(--radius-lg);
@@ -534,41 +550,41 @@
       border-bottom: 1px solid var(--border);
       background: var(--surface);
     }
-    .panel-head p { margin: 5px 0 0; color: var(--muted); font-size: 13px; line-height: 1.55; }
-    .toolbar, .form { display: flex; flex-wrap: wrap; gap: 10px; padding: 16px 18px; align-items: end; }
+    .panel-head p { margin: var(--space-1) 0 0; color: var(--muted); font-size: 13px; line-height: 1.55; }
+    .toolbar, .form { display: flex; flex-wrap: wrap; gap: var(--space-3); padding: var(--space-5) var(--space-6); align-items: end; }
     .list-toolbar {
       display: grid;
       grid-template-columns: minmax(280px, 520px) minmax(520px, 560px);
-      gap: 10px 12px;
+      gap: var(--space-2) var(--space-3);
       align-items: start;
       justify-content: space-between;
     }
     .search-field { min-width: 0; max-width: none; }
-    .mailbox-filter-row { display: flex; gap: 8px; align-items: flex-end; justify-content: flex-end; min-width: 0; }
+    .mailbox-filter-row { display: flex; gap: var(--space-2); align-items: flex-end; justify-content: flex-end; min-width: 0; }
     .mailbox-filter-field { width: 100%; color: var(--muted); font-size: 12px; font-weight: 500; }
-    .mailbox-control-stack { grid-column: 2; display: grid; gap: 8px; justify-items: end; align-items: start; }
-    .mailbox-action-row { display: flex; flex-wrap: nowrap; gap: 8px; align-items: center; justify-content: flex-end; }
-    .pager { display: flex; flex-wrap: nowrap; gap: 8px; align-items: center; justify-content: flex-end; color: var(--muted); font-size: 13px; }
-    .pager button { padding: 8px 11px; border-radius: var(--radius-lg); }
+    .mailbox-control-stack { grid-column: 2; display: grid; gap: var(--space-2); justify-items: end; align-items: start; }
+    .mailbox-action-row { display: flex; flex-wrap: nowrap; gap: var(--space-2); align-items: center; justify-content: flex-end; }
+    .pager { display: flex; flex-wrap: nowrap; gap: var(--space-2); align-items: center; justify-content: flex-end; color: var(--muted); font-size: 13px; }
+    .pager button { padding: var(--space-2) var(--space-3); border-radius: var(--radius-lg); }
     #mailboxPageInfo { white-space: nowrap; }
-    .mailbox-filter-field select { width: 100%; min-width: 180px; padding: 8px 10px; }
-    .page-size-control { display: inline-flex; flex-direction: row; gap: 6px; align-items: center; color: var(--muted); font-size: 13px; }
-    .page-size-control input { width: 76px; padding: 8px 10px; }
+    .mailbox-filter-field select { width: 100%; min-width: 180px; padding: var(--space-2) var(--space-3); }
+    .page-size-control { display: inline-flex; flex-direction: row; gap: var(--space-2); align-items: center; color: var(--muted); font-size: 13px; }
+    .page-size-control input { width: 76px; padding: var(--space-2) var(--space-3); }
     .mailbox-code-cell {
       min-width: 150px;
       max-width: 220px;
     }
     .mailbox-code-empty {
-      color: var(--faint);
+      color: var(--muted);
       font-size: 13px;
       white-space: nowrap;
     }
     .code-inline-result {
       display: inline-grid;
-      gap: 3px;
+      gap: var(--space-1);
       min-width: 118px;
       max-width: 100%;
-      padding: 6px 10px;
+      padding: var(--space-2) var(--space-3);
       border: 1px solid var(--border);
       border-radius: var(--radius-md);
       background: var(--surface-sunken);
@@ -607,11 +623,11 @@
       display: inline-block;
       animation: spin .8s linear infinite;
       vertical-align: -2px;
-      margin-right: 5px;
+      margin-right: var(--space-1);
     }
     .account-tabs, .session-tabs {
       display: flex;
-      gap: 8px;
+      gap: var(--space-2);
       overflow-x: auto;
       padding: var(--space-2) var(--space-6);
       border-top: 1px solid var(--border);
@@ -620,7 +636,7 @@
     }
     .account-tabs button, .session-tabs button {
       flex: 0 0 auto;
-      padding: 0 10px;
+      padding: 0 var(--space-3);
       min-height: 28px;
       border-radius: var(--radius-md);
       color: var(--muted);
@@ -632,26 +648,26 @@
       background: var(--accent-subtle);
     }
     .session-card {
-      padding-top: 10px;
+      padding-top: var(--space-2);
       line-height: 1.75;
       color: var(--fg-secondary);
     }
     .create-account-selector {
       display: grid;
-      gap: 8px;
-      padding: 10px;
+      gap: var(--space-2);
+      padding: var(--space-3);
       border: 1px solid var(--border-strong);
       border-radius: var(--radius-md);
       background: var(--surface);
     }
     .create-account-selector .selector-actions {
       display: flex;
-      gap: 8px;
+      gap: var(--space-2);
       align-items: center;
       flex-wrap: wrap;
     }
     .create-account-selector .selector-actions button {
-      padding: 0 10px;
+      padding: 0 var(--space-3);
       min-height: 28px;
       border-radius: var(--radius-md);
       font-size: 13px;
@@ -660,11 +676,11 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
-      gap: 10px;
+      gap: var(--space-3);
       flex-wrap: wrap;
     }
     .selector-label-row button {
-      padding: 0 10px;
+      padding: 0 var(--space-3);
       min-height: 28px;
       border-radius: var(--radius-md);
       font-size: 13px;
@@ -675,8 +691,8 @@
       flex-direction: row;
       align-items: center;
       justify-content: space-between;
-      gap: 10px;
-      padding: 9px 10px;
+      gap: var(--space-3);
+      padding: var(--space-2) var(--space-3);
       border: 1px solid var(--border);
       border-radius: var(--radius-md);
       background: var(--surface);
@@ -695,7 +711,7 @@
     .create-account-primary {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: var(--space-2);
       min-width: 0;
       flex-wrap: wrap;
     }
@@ -712,13 +728,13 @@
       flex-wrap: wrap;
       justify-content: flex-end;
       align-items: center;
-      gap: 6px;
+      gap: var(--space-2);
       text-align: right;
     }
     .login-chips {
       display: inline-flex;
       flex-wrap: wrap;
-      gap: 6px;
+      gap: var(--space-2);
       align-items: center;
     }
     .login-chip {
@@ -727,7 +743,7 @@
       min-height: 22px;
       border: 1px solid var(--border);
       border-radius: var(--radius-full);
-      padding: 0 8px;
+      padding: 0 var(--space-2);
       color: var(--neutral-badge);
       background: var(--neutral-bg);
       font-size: 12px;
@@ -755,7 +771,7 @@
       min-height: 22px;
       border: 1px solid var(--success-border);
       border-radius: var(--radius-full);
-      padding: 0 8px;
+      padding: 0 var(--space-2);
       color: var(--success);
       background: var(--success-bg);
       font-size: 12px;
@@ -777,12 +793,12 @@
       display: flex;
       flex-wrap: wrap;
       align-items: center;
-      gap: 8px;
+      gap: var(--space-2);
     }
-    .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 16px 18px; }
+    .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); padding: var(--space-5) var(--space-6); }
     .field-grid .full, .form .full { grid-column: 1 / -1; }
     .panel-body { padding-bottom: 2px; }
-    label, .field-label { display: flex; flex-direction: column; gap: 6px; color: var(--fg-secondary); font-size: 13px; line-height: 18px; font-weight: 500; }
+    label, .field-label { display: flex; flex-direction: column; gap: var(--space-2); color: var(--fg-secondary); font-size: 13px; line-height: 18px; font-weight: 500; }
     input, textarea, select {
       width: 100%;
       min-width: 0;
@@ -790,7 +806,7 @@
       color: var(--fg);
       border: 1px solid var(--border-strong);
       border-radius: var(--radius-md);
-      padding: 0 12px;
+      padding: 0 var(--space-3);
       min-height: 36px;
       font: 400 14px/22px var(--font-body);
       outline: none;
@@ -815,15 +831,15 @@
     }
     /* 数字输入右对齐并使用等宽数字，便于核对 */
     input[type="number"] { text-align: right; font-variant-numeric: tabular-nums; }
-    textarea { padding: 8px 12px; }
+    textarea { padding: var(--space-2) var(--space-3); }
     textarea { min-height: 88px; resize: vertical; }
     input[type="checkbox"] { width: auto; min-width: 0; }
-    label.checkline { flex-direction: row; align-items: center; justify-content: flex-start; padding: 11px 12px; }
+    label.checkline { flex-direction: row; align-items: center; justify-content: flex-start; padding: var(--space-3); }
     /* 必填星号：只做视觉标记，屏幕阅读器靠 input 的 required 属性识别 */
     label.req > span:first-child::after,
     .field-label.req > span:first-child::after {
       content: "*";
-      margin-left: 4px;
+      margin-left: var(--space-1);
       color: var(--danger);
     }
     /* 校验提示预留 18px 行高，出现错误时不把下方内容顶开 */
@@ -841,7 +857,7 @@
       color: var(--fg);
       border: 1px solid var(--border-strong);
       border-radius: var(--radius-md);
-      padding: 0 12px;
+      padding: 0 var(--space-3);
       min-height: 32px;
       font-size: 14px;
       font-weight: 500;
@@ -871,8 +887,8 @@
       button, input, select { min-height: 44px; }
     }
     .notice {
-      margin: 14px 18px 0;
-      padding: 12px 14px;
+      margin: var(--space-4) var(--space-6) 0;
+      padding: var(--space-3) var(--space-4);
       color: var(--success);
       font-size: 13px;
       line-height: 1.6;
@@ -881,6 +897,44 @@
       border: 1px solid var(--success-border);
       border-radius: var(--radius-md);
     }
+    /* ===== Alert 组件：依据 DESIGN.md 11.3 节，四种语义复用状态色三件套 ===== */
+    .alert {
+      display: flex;
+      gap: var(--space-3);
+      margin: var(--space-4) var(--space-6) 0;
+      padding: var(--space-3) var(--space-4);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      background: var(--surface-sunken);
+      font-size: 13px;
+      line-height: 20px;
+    }
+    .alert > svg { width: 16px; height: 16px; flex: 0 0 auto; margin-top: 2px; }
+    .alert-body { display: grid; gap: var(--space-1); min-width: 0; }
+    .alert-body strong { font-size: 13px; line-height: 20px; font-weight: 600; }
+    .alert-body span { color: var(--fg-secondary); }
+    .alert.warn { border-color: var(--warning-border); background: var(--warning-bg); }
+    .alert.warn > svg, .alert.warn .alert-body strong { color: var(--warning); }
+    .alert.danger { border-color: var(--danger-border); background: var(--danger-bg); }
+    .alert.danger > svg, .alert.danger .alert-body strong { color: var(--danger); }
+    .alert.info { border-color: var(--accent-border); background: var(--accent-subtle); }
+    .alert.info > svg, .alert.info .alert-body strong { color: var(--accent-text); }
+
+    /* ===== 敏感字段：默认遮蔽，显式点击才明文，参照 1Password 的处理 ===== */
+    .secret-field { display: grid; gap: var(--space-1); }
+    .secret-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto auto;
+      gap: var(--space-2);
+      align-items: center;
+    }
+    .secret-row input { width: 100%; }
+    .secret-row input.masked {
+      font-family: var(--font-mono);
+      letter-spacing: 0.12em;
+    }
+    .secret-note { color: var(--muted); font-size: 12px; line-height: 18px; }
+
     .hint { color: var(--muted); font-size: 12px; line-height: 18px; padding: 0 var(--space-6) var(--space-4); }
     /* 粘性表头依赖容器高度约束，缺少 max-height 会静默失效 */
     .table-wrap {
@@ -889,7 +943,7 @@
       overscroll-behavior: contain;
     }
     table { width: 100%; border-collapse: collapse; min-width: 940px; }
-    th, td { border-top: 1px solid var(--border); padding: 12px 16px; text-align: left; vertical-align: middle; }
+    th, td { border-top: 1px solid var(--border); padding: var(--space-3) var(--space-4); text-align: left; vertical-align: middle; }
     th {
       position: sticky;
       top: 0;
@@ -947,47 +1001,50 @@
       display: block;
       height: 12px;
       border-radius: var(--radius-sm);
-      background: var(--surface-sunken);
+      /* 骨架块需比表面稍深一档才可见，surface-sunken 在浅色下几乎与白底同色 */
+      background: var(--neutral-bg);
       animation: skeletonPulse 1.4s var(--ease) infinite;
     }
+    /* 骨架行沿用真实行的边框与内边距，保证请求返回时行高不跳变 */
+    .skeleton-row td { border-top: 1px solid var(--border); }
     @keyframes skeletonPulse { 0%, 100% { opacity: 1; } 50% { opacity: .55; } }
     .pill {
       display: inline-flex;
       align-items: center;
-      gap: 5px;
+      gap: var(--space-1);
       min-height: 22px;
       border: 1px solid var(--success-border);
       border-radius: var(--radius-full);
-      padding: 0 8px;
+      padding: 0 var(--space-2);
       color: var(--success);
       background: var(--success-bg);
       font-size: 12px;
       font-weight: 500;
-      margin: 2px 4px 2px 0;
+      margin: 2px var(--space-1) 2px 0;
     }
     .pill.off, .status-failed, .status-disabled { color: var(--danger); border-color: var(--danger-border); background: var(--danger-bg); }
     .status-used { color: var(--warning); border-color: var(--warning-border); background: var(--warning-bg); }
     .status-available, .status-active { color: var(--success); }
-    .row-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-    .row-actions button, .row-actions select { width: auto; min-width: 0; padding: 0 10px; min-height: 28px; border-radius: var(--radius-md); font-size: 13px; }
+    .row-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
+    .row-actions button, .row-actions select { width: auto; min-width: 0; padding: 0 var(--space-3); min-height: 28px; border-radius: var(--radius-md); font-size: 13px; }
     .copy-menu-wrap {
       display: inline-flex;
       flex-wrap: wrap;
-      gap: 6px;
+      gap: var(--space-2);
       align-items: center;
     }
     .copy-choice-menu {
       display: inline-flex;
       flex-wrap: wrap;
-      gap: 6px;
-      padding: 4px;
+      gap: var(--space-2);
+      padding: var(--space-1);
       border: 1px solid var(--border);
       border-radius: var(--radius-md);
       background: var(--surface);
       box-shadow: var(--shadow-dropdown);
     }
     .copy-choice-menu button {
-      padding: 0 9px;
+      padding: 0 var(--space-2);
       min-height: 28px;
       font-size: 13px;
       white-space: nowrap;
@@ -1014,10 +1071,10 @@
     .mini-log { min-height: 120px; max-height: 220px; }
     details.panel summary { list-style: none; cursor: pointer; }
     details.panel summary::-webkit-details-marker { display: none; }
-    .inline-details { padding: 0 18px 16px; }
-    .inline-details summary { color: var(--fg-secondary); cursor: pointer; font-size: 13px; font-weight: 500; padding: 2px 0 8px; }
+    .inline-details { padding: 0 var(--space-6) var(--space-4); }
+    .inline-details summary { color: var(--fg-secondary); cursor: pointer; font-size: 13px; font-weight: 500; padding: var(--space-1) 0 var(--space-2); }
     .inline-details summary:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
-    .inline-details .field-grid { padding: 8px 0 0; }
+    .inline-details .field-grid { padding: var(--space-2) 0 0; }
     .modal-backdrop {
       position: fixed;
       inset: 0;
@@ -1025,7 +1082,7 @@
       display: none;
       align-items: center;
       justify-content: center;
-      padding: 20px;
+      padding: var(--space-5);
       background: oklch(20% 0.02 250 / 0.44);
     }
     .modal-backdrop.show { display: flex; }
@@ -1037,24 +1094,23 @@
       box-shadow: var(--shadow-modal);
       overflow: hidden;
     }
-    .mailbox-messages { max-height: calc(100vh - 220px); overflow-y: auto; padding: 0 18px 18px; }
-    .mailbox-message { border-top: 1px solid var(--line); padding: 14px 0; }
-    .mailbox-message-html { width: 100%; height: 360px; margin-top: 8px; border: 1px solid var(--border); border-radius: var(--radius-md); background: #fff; resize: vertical; }
-    body[data-density="compact"] .content-head { padding: 12px 18px; }
+    .mailbox-messages { max-height: calc(100vh - 220px); overflow-y: auto; padding: 0 var(--space-6) var(--space-6); }
+    .mailbox-message { border-top: 1px solid var(--border); padding: var(--space-4) 0; }
+    .mailbox-message-html { width: 100%; height: 360px; margin-top: var(--space-2); border: 1px solid var(--border); border-radius: var(--radius-md); background: #fff; resize: vertical; }
+    body[data-density="compact"] .content-head { padding: var(--space-3) var(--space-6); }
     body[data-density="compact"] .content-main { padding: 0; }
-    body[data-density="compact"] .global-log-panel { margin: 0 18px 24px; }
     body[data-density="compact"] .grid,
     body[data-density="compact"] .layout,
     body[data-density="compact"] .workflow,
-    body[data-density="compact"] .stack { gap: 12px; }
+    body[data-density="compact"] .stack { gap: var(--space-3); }
     body[data-density="compact"] .card,
     body[data-density="compact"] .panel-head,
     body[data-density="compact"] .toolbar,
     body[data-density="compact"] .form,
-    body[data-density="compact"] .field-grid { padding: 12px 14px; }
+    body[data-density="compact"] .field-grid { padding: var(--space-3) var(--space-4); }
     body[data-density="compact"] th,
-    body[data-density="compact"] td { padding: 10px 12px; }
-    body[data-density="compact"] .log { padding: 12px 14px; line-height: 1.55; }
+    body[data-density="compact"] td { padding: var(--space-2) var(--space-3); }
+    body[data-density="compact"] .log { padding: var(--space-3) var(--space-4); line-height: 1.55; }
     @media (max-width: 1120px) {
       .app-shell { grid-template-columns: 1fr; }
       .sidebar {
@@ -1062,7 +1118,7 @@
         height: auto;
         display: grid;
         grid-template-columns: minmax(220px, 1fr) minmax(220px, 1fr);
-        gap: 14px;
+        gap: var(--space-4);
       }
       .brand, .side-nav { min-width: 0; }
       .side-nav { grid-template-columns: repeat(3, minmax(0, 1fr)); align-content: start; }
@@ -1076,7 +1132,7 @@
     }
     /* ≤820px 表格转卡片列表：每条记录一张卡，不保留横向滚动作为唯一方案。
        单元格靠 data-label 显示字段名，因此表格 DOM 结构无需改动。 */
-    @media (max-width: 820px) {
+    @media (max-width: 960px) {
       .table-wrap { max-height: none; overflow: visible; }
       .table-wrap table { min-width: 0; display: block; }
       .table-wrap thead { display: none; }
@@ -1115,12 +1171,11 @@
       .table-wrap .row-actions { padding-top: var(--space-1); }
     }
     @media (max-width: 680px) {
-      .app-shell { padding: 8px; gap: 8px; }
-      .sidebar { grid-template-columns: 1fr; padding: 16px; }
+      .app-shell { padding: var(--space-2); gap: var(--space-2); }
+      .sidebar { grid-template-columns: 1fr; padding: var(--space-4); }
       .side-nav { grid-template-columns: 1fr 1fr; }
-      .content-head { padding-left: 16px; padding-right: 16px; }
+      .content-head { padding-left: var(--space-4); padding-right: var(--space-4); }
       .content-main { padding: 0; }
-      .global-log-panel { margin-left: 16px; margin-right: 16px; }
       .content-head { align-items: flex-start; flex-direction: column; }
       .content-actions, .content-actions > button { width: 100%; }
       /* 窄屏下用户菜单占满宽度，浮层改为定位到容器整宽 */
@@ -1133,10 +1188,13 @@
     /* ===== 动效层 =====
        依据 docs/DESIGN.md 第 7 节动效预算：只过渡颜色与边框，
        不做位移、缩放、旋转、扫光，也不做入场关键帧。 */
-    h1 { font-size: 20px; line-height: 28px; font-weight: 600; }
-    h2 { font-size: 16px; line-height: 24px; font-weight: 600; }
-    /* 概览大数字使用等宽数字，避免刷新时列宽跳动 */
-    .card strong { font-variant-numeric: tabular-nums; }
+    /* 数字统一等宽，避免刷新与翻页时列宽跳动 */
+    .card strong,
+    td.num,
+    .pager,
+    #mailboxPageInfo,
+    .mono,
+    .code-value { font-variant-numeric: tabular-nums; }
 
     .nav-item, .segmented button, .log-tabs button, .account-tabs button,
     .session-tabs button, .pager button, .row-actions button, .card, .panel,
@@ -1189,9 +1247,8 @@
   <div class="app-shell">
     <aside class="sidebar">
       <div class="brand">
-        <div class="eyebrow">Pure Protocol Console</div>
         <h1>iCloud Privacy Mail</h1>
-        <div class="sub">隐私邮箱创建、同步和取码 API 工作台。</div>
+        <div class="sub">隐藏邮箱管理与验证码取件</div>
       </div>
 
       <nav class="side-nav" aria-label="功能分类">
@@ -1199,19 +1256,26 @@
         <button class="nav-item" data-view="session" onclick="setActiveView('session')"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="9" r="4.6"/><path d="m12.4 12.4 7.6 7.6"/><path d="m16.6 16.6 2-2"/></svg></span><span>登录态</span><span class="count-dot" id="navSessionCount">0</span></button>
         <button class="nav-item" data-view="create" onclick="setActiveView('create')"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="17" height="17" rx="5"/><path d="M12 8.4v7.2M8.4 12h7.2"/></svg></span><span>创建邮箱</span></button>
         <button class="nav-item" data-view="mailboxes" onclick="setActiveView('mailboxes')"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 13.4 6.3 6.7A2 2 0 0 1 8.2 5.4h7.6a2 2 0 0 1 1.9 1.3L20 13.4"/><path d="M4 13.4h4.2l1.3 2.2h5l1.3-2.2H20v3.7A1.9 1.9 0 0 1 18.1 19.2H5.9A1.9 1.9 0 0 1 4 17.1z"/></svg></span><span>邮箱池</span><span class="count-dot" id="navMailboxCount">0</span></button>
+        <button class="nav-item" data-view="logs" onclick="setActiveView('logs')"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 6.5h15M4.5 12h15M4.5 17.5h9"/></svg></span><span>运行日志</span></button>
       </nav>
+
+      <div></div>
+
+      <p class="side-footnote">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4.5" y="10.5" width="15" height="9.5" rx="2"/><path d="M8 10.5V7.8a4 4 0 0 1 8 0v2.7"/></svg>
+        <span>Apple 凭据与邮箱 Token 仅存储于本机数据目录，不上传任何第三方服务。</span>
+      </p>
     </aside>
 
     <section class="content">
       <header class="content-head">
         <div>
-          <div class="eyebrow">当前分类</div>
           <h2 id="activeViewTitle">概览</h2>
           <div class="sub" id="activeViewSubtitle">查看账号、邮箱和验证码数量。</div>
         </div>
-        <!-- 顶栏只保留主操作「刷新状态」，其余设置全部收进用户菜单 -->
+        <!-- 顶栏不承载 primary：刷新属辅助动作，降为 secondary，避免与视图主操作抢权重 -->
         <div class="content-actions">
-          <button class="primary" onclick="refresh()">刷新状态</button>
+          <button onclick="refresh()">刷新状态</button>
           <div class="user-menu" id="userMenu">
             <button type="button" class="user-menu-trigger" id="userMenuTrigger"
                     aria-haspopup="true" aria-expanded="false" aria-controls="userMenuPanel"
@@ -1257,8 +1321,39 @@
           <section class="grid">
             <div class="card"><strong id="accountCount">0</strong><span>登录账号</span></div>
             <div class="card"><strong id="mailboxCount">0</strong><span>隐私邮箱</span></div>
-            <div class="card"><strong id="messageCount">0</strong><span>验证码邮件</span></div>
+            <div class="card"><strong id="messageCount">0</strong><span>已转发验证码</span></div>
             <div class="card"><strong id="apiStatus">-</strong><span>API 状态</span></div>
+          </section>
+
+          <!-- 快速取码：本产品最高频的单一动作，放在首屏一步直达 -->
+          <section class="panel quick-code-panel">
+            <div class="panel-head">
+              <div>
+                <h2>快速取码</h2>
+                <p>粘贴隐私邮箱地址后回车，直接读取当前有效验证码。</p>
+              </div>
+            </div>
+            <div class="quick-code-row">
+              <label class="quick-code-field" for="quickCodeInput">
+                <span>隐私邮箱地址</span>
+                <input id="quickCodeInput" class="mono" placeholder="example@privaterelay.appleid.com"
+                       autocomplete="off" spellcheck="false"
+                       onkeydown="if (event.key === 'Enter') { event.preventDefault(); runQuickCode(); }">
+              </label>
+              <button id="quickCodeButton" class="primary" onclick="runQuickCode()">读取验证码</button>
+            </div>
+            <div id="quickCodeResult" class="quick-code-result" hidden></div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h2>最近活动</h2>
+                <p>创建、同步与取码的最近记录。</p>
+              </div>
+              <button type="button" onclick="setActiveView('logs')">查看完整日志</button>
+            </div>
+            <div id="recentActivity" class="activity-list"></div>
           </section>
         </section>
 
@@ -1270,7 +1365,14 @@
           <div class="notice" id="icloudSessionInfo">未完成创建登录。建议先点“新接口登录”或“旧接口登录”；收到 2FA 后提交对应验证码。取码登录会单独保存。</div>
           <div class="field-grid">
             <label class="req"><span>Apple ID</span><input id="protocolAppleId" autocomplete="username" required placeholder="name@icloud.com"></label>
-            <label class="req"><span>密码</span><input id="protocolPassword" type="password" autocomplete="current-password" required placeholder="Apple ID 密码"></label>
+            <div class="secret-field">
+              <label class="req" for="protocolPassword"><span>密码</span></label>
+              <div class="secret-row">
+                <input id="protocolPassword" type="password" autocomplete="current-password" required placeholder="Apple ID 密码">
+                <button type="button" onclick="toggleSecret('protocolPassword', this)" aria-controls="protocolPassword">显示</button>
+              </div>
+              <span class="secret-note">仅用于换取登录态，不会明文落盘。</span>
+            </div>
             <label class="full">2FA 验证码<input id="protocol2FA" inputmode="numeric" maxlength="6" placeholder="收到后输入 6 位验证码"></label>
             <label>新接口验证码方式
               <select id="appleAccount2FAMethod">
@@ -1303,7 +1405,7 @@
                 <p>每小时约可创建 5 个，作为回落通道。</p>
               </div>
               <div class="toolbar">
-                <button id="protocolLoginButton" class="primary" onclick="startProtocolLogin()">旧接口登录</button>
+                <button id="protocolLoginButton" onclick="startProtocolLogin()">旧接口登录</button>
                 <button id="protocol2FAButton" onclick="submitProtocol2FA()">提交验证码</button>
               </div>
             </section>
@@ -1316,7 +1418,14 @@
           <div class="hint">两种登录态都保存后可一起创建，合计约 25 个/小时。</div>
           <div class="field-grid">
             <label class="req"><span>iCloud 邮箱账号</span><input id="imapEmail" autocomplete="username" required placeholder="name@icloud.com"></label>
-            <label class="req"><span>App 专用密码</span><input id="imapAppPassword" type="password" autocomplete="new-password" required placeholder="xxxx-xxxx-xxxx-xxxx"></label>
+            <div class="secret-field">
+              <label class="req" for="imapAppPassword"><span>App 专用密码</span></label>
+              <div class="secret-row">
+                <input id="imapAppPassword" type="password" autocomplete="new-password" required placeholder="xxxx-xxxx-xxxx-xxxx">
+                <button type="button" onclick="toggleSecret('imapAppPassword', this)" aria-controls="imapAppPassword">显示</button>
+              </div>
+              <span class="secret-note">仅存储于本机，不参与创建邮箱。</span>
+            </div>
             <div class="full toolbar">
               <button id="imapSaveButton" type="button" onclick="saveICloudIMAPLogin()">保存取码登录</button>
               <button id="imapCheckButton" type="button" onclick="checkICloudIMAPLogin()">检测取码登录</button>
@@ -1374,7 +1483,7 @@
             </label>
           </div>
           <div class="toolbar">
-            <button id="startScheduleButton" class="primary" onclick="startMailboxScheduler()">开始定时创建</button>
+            <button id="startScheduleButton" onclick="startMailboxScheduler()">开始定时创建</button>
             <button id="stopScheduleButton" class="danger" onclick="stopMailboxScheduler()">停止定时创建</button>
             <span id="scheduleStatus" class="muted">定时创建未启动；刷新页面不会停止后台任务。</span>
           </div>
@@ -1421,31 +1530,28 @@
           </div>
         </section>
 
-      </main>
-      <!-- 日志面板改为可折叠，默认收起，不再常驻占用每个视图底部 -->
-      <section id="globalLogPanel" class="panel global-log-panel">
-        <div class="panel-head log-panel-head">
-          <button type="button" class="log-toggle" id="logToggle"
-                  aria-expanded="false" aria-controls="logBody" onclick="toggleLogPanel()">
-            <svg class="log-toggle-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>
-            <span>日志</span>
-            <span class="log-toggle-hint" id="logToggleHint">运行、创建与定时日志统一显示</span>
-          </button>
-          <div class="log-tabs" aria-label="日志分类">
-            <button type="button" data-log-category="all" onclick="setLogCategory('all')">全部</button>
-            <button type="button" data-log-category="runtime" onclick="setLogCategory('runtime')">运行</button>
-            <button type="button" data-log-category="create" onclick="setLogCategory('create')">创建</button>
-            <button type="button" data-log-category="schedule" onclick="setLogCategory('schedule')">定时</button>
+        <!-- 日志改为独立视图，不再常驻每个视图底部挤压表格空间 -->
+        <section class="view-section panel" data-view="logs">
+          <div class="panel-head log-panel-head">
+            <div>
+              <h2>运行日志</h2>
+              <p>运行、创建与定时日志统一显示。</p>
+            </div>
+            <div class="log-tabs" aria-label="日志分类">
+              <button type="button" data-log-category="all" onclick="setLogCategory('all')">全部</button>
+              <button type="button" data-log-category="runtime" onclick="setLogCategory('runtime')">运行</button>
+              <button type="button" data-log-category="create" onclick="setLogCategory('create')">创建</button>
+              <button type="button" data-log-category="schedule" onclick="setLogCategory('schedule')">定时</button>
+            </div>
           </div>
-        </div>
-        <div id="logBody" hidden>
           <div class="toolbar">
             <button onclick="copyLog()">复制日志</button>
             <button class="danger" onclick="clearLog()">清除日志</button>
           </div>
           <div id="log" class="log global-log">等待操作...</div>
-        </div>
-      </section>
+        </section>
+
+      </main>
     </section>
   </div>
   <div id="runConfigModal" class="modal-backdrop" onclick="closeRunConfig(event)">
@@ -1454,7 +1560,14 @@
         <h2>运行配置</h2>
         <p>服务器按配置文件里的默认数据目录保存状态；这里集中处理导出和远端验证码清理。</p>
       </div>
-      <div class="notice" id="runConfigInfo">点击“导出数据”后选择保存位置。导出文件只包含当前登录账号有权访问的数据，并包含登录态 Cookie 和邮箱 API token，请妥善保管。</div>
+      <!-- 导出会带出登录态 Cookie 与邮箱 token，用 warning 变体而非普通正文提示 -->
+      <div class="alert warn" id="runConfigInfo" role="note">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4.8 3.6 19.2h16.8z"/><path d="M12 10v4.2M12 16.9v.2"/></svg>
+        <div class="alert-body">
+          <strong>导出文件包含敏感凭据</strong>
+          <span>导出内容含登录态 Cookie 与邮箱 API token，任何持有该文件的人都可直接读取你的验证码。请存放在受信任的位置，不要通过聊天工具或公共网盘传输。</span>
+        </div>
+      </div>
       <div class="toolbar">
         <button class="primary" onclick="exportRuntimeData()">导出数据</button>
         <select id="mailboxExportFormatModal" class="export-format" title="导出格式">
@@ -1528,7 +1641,6 @@
     const viewStorageKey = 'ipm_active_view';
     const themeStorageKey = 'ipm_theme';
     const densityStorageKey = 'ipm_density';
-    const logOpenStorageKey = 'ipm_log_open';
     let activeLogCategory = 'all';
     let activeView = 'overview';
     let runtimeLogText = '等待操作...';
@@ -1536,10 +1648,11 @@
     let scheduleLogText = '暂无定时创建记录。';
     let lastUpdateStatus = null;
     const viewMeta = {
-      overview: ['概览', '查看账号、邮箱和验证码数量。'],
+      overview: ['概览', '快速取码、关键指标与最近活动。'],
       session: ['登录态', '保存和检测 Apple 登录态。'],
       create: ['创建邮箱', '按已保存账号创建 Hide My Email 地址。'],
-      mailboxes: ['邮箱池', '搜索、复制 API、取码和维护邮箱状态。']
+      mailboxes: ['邮箱池', '搜索、复制 API、取码和维护邮箱状态。'],
+      logs: ['运行日志', '运行、创建与定时日志统一显示。']
     };
 
     function setActiveView(view) {
@@ -1558,6 +1671,7 @@
       } catch (_) {}
       activeView = normalized;
       if (normalized === 'mailboxes') renderMailboxes();
+      if (normalized === 'overview') renderRecentActivity();
       renderGlobalLogs();
     }
 
@@ -1619,7 +1733,6 @@
       setTheme(savedTheme);
       setDensity(savedDensity);
       initUserMenu();
-      initLogPanel();
     }
 
     /* 用户菜单开合：aria-expanded 需与 hidden 状态保持一致，供读屏软件播报 */
@@ -1841,38 +1954,45 @@
       ].join('\n\n');
     }
 
-    /* 日志面板折叠状态：默认收起，用户展开后记住选择 */
-    function setLogPanelOpen(open) {
-      const body = $('logBody');
-      const toggle = $('logToggle');
-      if (body) body.hidden = !open;
-      if (toggle) toggle.setAttribute('aria-expanded', String(open));
-      try {
-        localStorage.setItem(logOpenStorageKey, open ? '1' : '0');
-      } catch (_) {}
-    }
-
-    function toggleLogPanel() {
-      const body = $('logBody');
-      setLogPanelOpen(Boolean(body && body.hidden));
-    }
-
-    function initLogPanel() {
-      let saved = '0';
-      try {
-        saved = localStorage.getItem(logOpenStorageKey) || '0';
-      } catch (_) {}
-      setLogPanelOpen(saved === '1');
-    }
-
+    /* 日志已迁入独立视图，渲染时只同步分类高亮与正文；
+       概览页处于激活状态时同步刷新最近活动列表 */
     function renderGlobalLogs() {
-      const panel = $('globalLogPanel');
-      if (panel) panel.hidden = activeView === 'mailboxes';
       for (const button of document.querySelectorAll('[data-log-category]')) {
         button.classList.toggle('active', button.dataset.logCategory === activeLogCategory);
       }
       const el = $('log');
       if (el) el.textContent = currentLogText();
+      if (activeView === 'overview') renderRecentActivity();
+    }
+
+    /* 最近活动：复用运行/创建/定时三路日志，取最新 8 条渲染到概览页 */
+    function renderRecentActivity() {
+      const host = $('recentActivity');
+      if (!host) return;
+      const placeholders = ['等待操作...', '暂无创建记录。', '暂无定时创建记录。'];
+      const entries = [];
+      for (const raw of [runtimeLogText, createLogText, scheduleLogText]) {
+        if (!raw || placeholders.includes(raw)) continue;
+        for (const line of String(raw).split('\n')) {
+          const text = line.trim();
+          if (!text) continue;
+          // 日志行格式为「HH:MM:SS 正文」，拆出时间列单独右对齐
+          const matched = text.match(/^(\d{1,2}:\d{2}:\d{2})\s+([\s\S]+)$/);
+          entries.push(matched ? {time: matched[1], text: matched[2]} : {time: '', text});
+        }
+      }
+      if (!entries.length) {
+        host.innerHTML = `<div class="activity-empty">
+          <strong>还没有运行记录</strong>
+          <span>保存 Apple 登录态并创建隐私邮箱后，操作记录会显示在这里。</span>
+          <button type="button" onclick="setActiveView('session')">前往登录态配置</button>
+        </div>`;
+        return;
+      }
+      host.innerHTML = entries.slice(0, 8).map(item => `<div class="activity-row">
+        <span class="activity-time">${esc(item.time)}</span>
+        <span class="activity-text">${esc(item.text)}</span>
+      </div>`).join('');
     }
 
     function log(text) {
@@ -2726,24 +2846,45 @@
       return params;
     }
 
+    /* 渲染骨架行：行数与行高对齐真实数据，避免请求返回时布局跳动 */
+    function renderMailboxSkeleton() {
+      const body = $('mailboxes');
+      const wrap = document.querySelector('.table-wrap');
+      if (!body) return;
+      const rowCount = Math.max(3, Math.min(10, Number(mailboxPageSize) || 10));
+      // 各列骨架宽度按真实内容长度设定，读起来更接近最终结果
+      const widths = ['52%', '82%', '46%', '38%', '58%', '68%'];
+      body.innerHTML = Array.from({length: rowCount}, () => `<tr class="skeleton-row" aria-hidden="true">${
+        widths.map(w => `<td><span class="skeleton-line" style="width:${w}"></span></td>`).join('')
+      }</tr>`).join('');
+      if (wrap) wrap.setAttribute('aria-busy', 'true');
+    }
+
     async function loadMailboxPage(options = {}) {
-      const data = await api('/api/mailboxes?' + mailboxListQuery().toString());
-      lastMailboxes = data.mailboxes || [];
-      lastMailboxGroups = data.groups || [];
-      lastMailboxPagination = data.pagination || {
-        page: mailboxPage,
-        page_size: mailboxPageSize,
-        total: lastMailboxes.length,
-        total_all: lastMailboxes.length,
-        total_pages: 1
-      };
-      mailboxPage = Number(lastMailboxPagination.page || mailboxPage || 1);
-      mailboxPageSize = Number(lastMailboxPagination.page_size || mailboxPageSize || 10);
-      if ($('mailboxPageSize')) $('mailboxPageSize').value = String(mailboxPageSize);
-      renderMailboxes();
-      updateNavCounts();
-      if (!options.silent) {
-        log(`邮箱池已刷新：第 ${mailboxPage}/${lastMailboxPagination.total_pages || 1} 页`);
+      const wrap = document.querySelector('.table-wrap');
+      // 仅在邮箱池视图可见时渲染骨架，后台静默刷新不打扰当前界面
+      if (activeView === 'mailboxes' && !options.silent) renderMailboxSkeleton();
+      try {
+        const data = await api('/api/mailboxes?' + mailboxListQuery().toString());
+        lastMailboxes = data.mailboxes || [];
+        lastMailboxGroups = data.groups || [];
+        lastMailboxPagination = data.pagination || {
+          page: mailboxPage,
+          page_size: mailboxPageSize,
+          total: lastMailboxes.length,
+          total_all: lastMailboxes.length,
+          total_pages: 1
+        };
+        mailboxPage = Number(lastMailboxPagination.page || mailboxPage || 1);
+        mailboxPageSize = Number(lastMailboxPagination.page_size || mailboxPageSize || 10);
+        if ($('mailboxPageSize')) $('mailboxPageSize').value = String(mailboxPageSize);
+        renderMailboxes();
+        updateNavCounts();
+        if (!options.silent) {
+          log(`邮箱池已刷新：第 ${mailboxPage}/${lastMailboxPagination.total_pages || 1} 页`);
+        }
+      } finally {
+        if (wrap) wrap.removeAttribute('aria-busy');
       }
     }
 
@@ -3297,6 +3438,102 @@
         log('取码失败：' + err.message);
       } finally {
         renderMailboxes();
+      }
+    }
+
+    /* 概览页快速取码：按邮箱地址在已加载邮箱池里定位，再走面板取码接口。
+       仅命中结构化邮箱地址，不做主题或发件人模糊匹配，避免归属误判。 */
+    async function runQuickCode() {
+      const input = $('quickCodeInput');
+      const button = $('quickCodeButton');
+      const box = $('quickCodeResult');
+      if (!input || !box) return;
+      const email = input.value.trim().toLowerCase();
+      if (!email) {
+        showQuickCodeResult('err', '请输入隐私邮箱地址', '');
+        return;
+      }
+      let row = (lastMailboxes || []).find(x => String(x.email || '').toLowerCase() === email);
+      if (!row) {
+        // 当前页未命中时按邮箱做一次全量搜索，避免只在本页查找导致误报"不存在"
+        try {
+          const params = new URLSearchParams({search: email, page: '1', page_size: '5'});
+          const data = await api('/api/mailboxes?' + params.toString());
+          row = (data.mailboxes || []).find(x => String(x.email || '').toLowerCase() === email);
+        } catch (err) {
+          showQuickCodeResult('err', '查询邮箱失败', err.message);
+          return;
+        }
+      }
+      if (!row) {
+        showQuickCodeResult('err', '邮箱池中没有这个地址', '请确认地址完整，或先在「邮箱池」同步已有邮箱。');
+        return;
+      }
+      button.disabled = true;
+      button.setAttribute('aria-busy', 'true');
+      showQuickCodeResult('', '正在读取验证码…', row.email);
+      try {
+        const url = panelMailboxCodeURL(row, {keyword: 'ChatGPT', waitMs: 12000, peek: true});
+        const res = await fetch(url.toString(), {credentials: 'same-origin'});
+        const data = await res.json();
+        if (data.success) {
+          showQuickCodeResult('ok', data.code, `${row.email} · ${data.received_at || '无时间'}`, data.code);
+          log(`快速取码：${row.email} -> ${data.code}`);
+        } else {
+          showQuickCodeResult('err', '暂未收到验证码', data.message || data.code || '');
+          log(`快速取码未取到：${row.email}`);
+        }
+      } catch (err) {
+        showQuickCodeResult('err', '取码失败', err.message);
+        log('快速取码失败：' + err.message);
+      } finally {
+        button.disabled = false;
+        button.removeAttribute('aria-busy');
+        renderRecentActivity();
+      }
+    }
+
+    /* 渲染快速取码结果；传入 copyValue 时附带复制按钮 */
+    function showQuickCodeResult(state, title, meta, copyValue) {
+      const box = $('quickCodeResult');
+      if (!box) return;
+      box.hidden = false;
+      box.className = 'quick-code-result' + (state ? ' ' + state : '');
+      const copyButton = copyValue
+        ? `<button type="button" data-copy-value="${esc(copyValue)}" onclick="copyQuickCode(this)">复制</button>`
+        : '';
+      box.innerHTML = `<div class="quick-code-result-head">
+          <span class="quick-code-value">${esc(title)}</span>
+          ${copyButton}
+        </div>
+        ${meta ? `<div class="quick-code-meta">${esc(meta)}</div>` : ''}`;
+    }
+
+    /* 敏感字段明文切换：仅在用户显式点击后短暂暴露，按钮文案与 aria 同步 */
+    function toggleSecret(inputID, button) {
+      const input = $(inputID);
+      if (!input || !button) return;
+      const revealed = input.type === 'text';
+      input.type = revealed ? 'password' : 'text';
+      button.textContent = revealed ? '显示' : '隐藏';
+      button.setAttribute('aria-pressed', String(!revealed));
+    }
+
+    /* 复制验证码并在按钮上给 2 秒确认反馈，不弹全局提示 */
+    async function copyQuickCode(button) {
+      const value = button.dataset.copyValue || '';
+      if (!value) return;
+      try {
+        await writeClipboard(value);
+        const original = button.textContent;
+        button.textContent = '已复制';
+        button.disabled = true;
+        setTimeout(() => {
+          button.textContent = original;
+          button.disabled = false;
+        }, 2000);
+      } catch (err) {
+        log('复制失败：' + err.message);
       }
     }
 
