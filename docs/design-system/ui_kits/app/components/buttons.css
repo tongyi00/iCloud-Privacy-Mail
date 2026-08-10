@@ -1,0 +1,61 @@
+/* ==========================================================================
+   iCloud Privacy Mail — 按钮 / Button 五变体三尺寸
+   依赖：../../../colors_and_type.css + ../../../tokens.css（必须先引入）
+   来源证据：examples/templates/{workbench-index,account-manage,login}.html
+   本文件由 ui_kits/app/components.css 聚合引入，也可单独引用。
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   Button：5 个变体。一个视图内 primary 只出现一次
+   -------------------------------------------------------------------------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  height: 32px;
+  padding: 0 var(--space-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  font: var(--text-body-strong);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color var(--dur) var(--ease),
+              border-color var(--dur) var(--ease),
+              color var(--dur) var(--ease);
+}
+.btn svg { width: 16px; height: 16px; flex: none; }
+.btn:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.btn:disabled {
+  background: var(--surface-sunken);
+  color: var(--muted);
+  border-color: var(--border);
+  cursor: not-allowed;
+}
+
+.btn.sm { height: 28px; padding: 0 10px; font-size: 13px; }
+.btn.lg { height: 36px; padding: 0 var(--space-4); }
+
+.btn.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+.btn.primary:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); }
+.btn.primary:active:not(:disabled) { background: oklch(from var(--accent-hover) calc(l - 0.04) c h); }
+
+/* 次级按钮悬浮走中性色，不得变成品牌色 */
+.btn.secondary { background: var(--surface); color: var(--fg); border-color: var(--border-strong); }
+.btn.secondary:hover:not(:disabled) { background: var(--surface-hover); border-color: var(--muted); }
+.btn.secondary:active:not(:disabled) { background: var(--surface-sunken); }
+
+.btn.ghost { background: transparent; color: var(--fg-secondary); border-color: transparent; }
+.btn.ghost:hover:not(:disabled) { background: var(--surface-hover); color: var(--fg); }
+.btn.ghost:active:not(:disabled) { background: var(--surface-sunken); }
+
+.btn.danger { background: var(--surface); color: var(--danger); border-color: var(--danger-border); }
+.btn.danger:hover:not(:disabled) { background: var(--danger-bg); }
+
+.btn.danger-solid { background: var(--danger); color: oklch(100% 0 0); border-color: var(--danger); }
+.btn.danger-solid:hover:not(:disabled) { background: oklch(from var(--danger) calc(l - 0.06) c h); }
+
+/* 移动端触达目标 */
+@media (max-width: 680px) {
+  .btn { min-height: 44px; }
+}

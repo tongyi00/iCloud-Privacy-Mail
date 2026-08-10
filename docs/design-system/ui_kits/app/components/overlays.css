@@ -1,0 +1,60 @@
+/* ==========================================================================
+   iCloud Privacy Mail — 浮层与危险区 / DangerZone + Dropdown + Modal + Log
+   依赖：../../../colors_and_type.css + ../../../tokens.css（必须先引入）
+   来源证据：examples/templates/{workbench-index,account-manage,login}.html
+   本文件由 ui_kits/app/components.css 聚合引入，也可单独引用。
+   ========================================================================== */
+
+/* 危险操作区：与常规操作物理隔离 */
+.danger-zone {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius-md);
+  background: var(--danger-bg);
+}
+.danger-zone-title { font: var(--text-label); color: var(--danger); }
+.danger-zone-desc  { font: var(--text-caption); color: var(--fg-secondary); }
+
+/* 浮层：全站只有 dropdown / modal / sticky 三种阴影 */
+.dropdown {
+  min-width: 180px;
+  padding: var(--space-1);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-dropdown);
+}
+.dropdown-item {
+  display: flex; align-items: center; width: 100%;
+  min-height: 32px; padding: 0 var(--space-3);
+  border: 0; border-radius: var(--radius-sm);
+  background: transparent; color: var(--fg-secondary);
+  font: var(--text-body); text-align: left; cursor: pointer;
+}
+.dropdown-item:hover { background: var(--surface-hover); color: var(--fg); }
+.dropdown-item:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
+
+.modal {
+  width: min(560px, calc(100vw - 2 * var(--space-6)));
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-modal);
+  overflow: hidden;
+}
+
+/* 日志：等宽 + 下沉表面 */
+.log {
+  max-height: 220px;
+  overflow: auto;
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface-sunken);
+  border-top: 1px solid var(--border);
+  font: var(--text-mono-sm);
+  /* 日志时间戳需要等宽数字；font 简写会重置该属性，故在其后声明 */
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-secondary);
+  white-space: pre-wrap;
+}

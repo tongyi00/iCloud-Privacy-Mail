@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light" data-density="comfortable">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>应用界面套件 — iCloud Privacy Mail</title>
+<link rel="stylesheet" href="../../colors_and_type.css">
+<link rel="stylesheet" href="../../tokens.css">
+<!-- 模块化组件层：逐个引入，顺序与 components.css 聚合入口一致 -->
+<link rel="stylesheet" href="components/app-shell.css">
+<link rel="stylesheet" href="components/buttons.css">
+<link rel="stylesheet" href="components/cards-panels.css">
+<link rel="stylesheet" href="components/data-table.css">
+<link rel="stylesheet" href="components/forms.css">
+<link rel="stylesheet" href="components/overlays.css">
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  .kit-wrap { max-width: 1080px; margin: 0 auto; padding: var(--space-10) var(--pad-page); display: grid; gap: var(--space-8); }
+  .kit-head { display: grid; gap: var(--space-2); }
+  .screen-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: var(--gap-card); }
+  .screen-card {
+    display: grid; gap: var(--space-2);
+    padding: var(--space-5);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    color: inherit; text-decoration: none;
+    transition: background-color var(--dur) var(--ease), border-color var(--dur) var(--ease);
+  }
+  .screen-card:hover { background: var(--surface-hover); border-color: var(--border-strong); }
+  .screen-card:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+  .screen-card h3 { font: 500 16px/24px var(--font-display); color: var(--fg); }
+  .file-list { display: grid; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
+  .file-row {
+    display: flex; align-items: center; justify-content: space-between; gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+    border: 1px solid var(--border); border-radius: var(--radius-md);
+    background: var(--surface);
+  }
+  /* 胶囊在 grid 子项中默认拉伸，收回内容宽度 */
+  .screen-card .pill { justify-self: start; }
+  /* 组合示例的取景框：只做裁切，不额外装饰 */
+  .kit-stage {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    background: var(--bg);
+  }
+</style>
+</head>
+<body>
+<div class="kit-wrap">
+  <header class="kit-head" data-od-id="kit-head">
+    <h1 class="text-display">应用界面套件</h1>
+    <p class="text-caption">iCloud Privacy Mail 设计系统的已应用界面层。三个屏幕直接消费 <code class="mono">colors_and_type.css</code>、<code class="mono">tokens.css</code> 与 <code class="mono">components.css</code>，不含内联令牌。</p>
+  </header>
+
+  <section style="display:grid;gap:var(--space-4)">
+    <h2>屏幕</h2>
+    <div class="screen-grid">
+      <a class="screen-card" href="workbench.html" data-od-id="screen-workbench">
+        <h3>工作台</h3>
+        <p class="text-caption">概览 / 登录态 / 创建邮箱 / 邮箱池 四视图切换，含验证码复制、行选中、主题与密度切换。</p>
+        <span class="pill status-available">交互可用</span>
+      </a>
+      <a class="screen-card" href="account-manage.html" data-od-id="screen-manage">
+        <h3>账号数据管理</h3>
+        <p class="text-caption">用户列表、邮箱数据、骨架加载态，运行配置弹窗内含隔离的危险操作区与二次确认。</p>
+        <span class="pill status-available">交互可用</span>
+      </a>
+      <a class="screen-card" href="login.html" data-od-id="screen-login">
+        <h3>登录</h3>
+        <p class="text-caption">400px 单列卡片、下划线标签页、字段级校验与加载态，页面唯一实心按钮。</p>
+        <span class="pill status-available">交互可用</span>
+      </a>
+    </div>
+  </section>
+
+  <section style="display:grid;gap:var(--space-4)" data-od-id="composed-surface">
+    <h2>组合示例</h2>
+    <p class="text-caption">下面这块界面由本目录的模块化组件文件直接组合而成：<code class="mono">components/app-shell.css</code> 提供外壳与侧栏，<code class="mono">components/cards-panels.css</code> 提供指标卡与面板，<code class="mono">components/data-table.css</code> 提供表格与状态胶囊，<code class="mono">components/buttons.css</code> 与 <code class="mono">components/forms.css</code> 提供操作与提示。可切换主题与密度观察同一组件的四种组合。</p>
+
+    <div class="kit-stage">
+      <div class="app-shell" style="min-height:0">
+        <aside class="sidebar" data-od-id="composed-sidebar">
+          <div class="brand">
+            <h1 style="font:500 15px/22px var(--font-display)">iCloud Privacy Mail</h1>
+            <span class="brand-sub">隐私邮箱工作台</span>
+          </div>
+          <nav class="side-nav" aria-label="示例导航">
+            <button class="nav-item active" type="button" aria-current="page">
+              <span class="nav-ico"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></span>
+              <span>概览</span>
+            </button>
+            <button class="nav-item" type="button">
+              <span class="nav-ico"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h10M4 18h7"/></svg></span>
+              <span>邮箱池</span>
+              <span class="count-dot">24</span>
+            </button>
+          </nav>
+        </aside>
+
+        <div class="content">
+          <header class="content-head" data-od-id="composed-head">
+            <h2 style="font:500 15px/22px var(--font-display)">概览</h2>
+            <div class="content-actions">
+              <button class="btn ghost sm" type="button" id="kitDensity">紧凑密度</button>
+              <button class="btn secondary sm" type="button" id="kitTheme">深色主题</button>
+              <button class="btn primary sm" type="button">刷新状态</button>
+            </div>
+          </header>
+
+          <div class="content-main" style="padding:var(--space-5) var(--pad-page)">
+            <div class="metric-grid">
+              <div class="metric-card"><span class="metric-label">登录账号</span><span class="metric-value">3</span></div>
+              <div class="metric-card"><span class="metric-label">隐私邮箱</span><span class="metric-value">24</span></div>
+              <div class="metric-card"><span class="metric-label">验证码邮件</span><span class="metric-value">18</span></div>
+              <div class="metric-card"><span class="metric-label">API 状态</span><span class="metric-value" style="font:var(--text-body-strong);color:var(--success)">正常</span></div>
+            </div>
+
+            <div class="alert info" role="status">
+              <span class="alert-title">提示</span>
+              <span>验证码查询是幂等读取，同一封邮件可重复取码，不会被消耗。</span>
+            </div>
+
+            <section class="panel" data-od-id="composed-table">
+              <div class="panel-head">
+                <div>
+                  <h3>隐私邮箱</h3>
+                  <p class="panel-desc">示例数据，用于演示排版与对齐</p>
+                </div>
+                <button class="btn secondary sm" type="button">导出</button>
+              </div>
+              <div class="table-scroll" style="max-height:200px">
+                <table>
+                  <thead><tr><th>邮箱地址</th><th>状态</th><th class="num">验证码</th><th>同步时间</th></tr></thead>
+                  <tbody>
+                    <tr aria-selected="true">
+                      <td data-label="邮箱地址"><span class="cell-email" title="quiet.harbor.4192@icloud.com">quiet.harbor.4192@icloud.com</span></td>
+                      <td data-label="状态"><span class="pill status-available">可用</span></td>
+                      <td data-label="验证码" class="num"><span class="code-value">418 205</span></td>
+                      <td data-label="同步时间"><span class="cell-time">2026-08-10 14:22</span></td>
+                    </tr>
+                    <tr>
+                      <td data-label="邮箱地址"><span class="cell-email" title="ember.field.7730@icloud.com">ember.field.7730@icloud.com</span></td>
+                      <td data-label="状态"><span class="pill status-used">已使用</span></td>
+                      <td data-label="验证码" class="num"><span class="cell-time">—</span></td>
+                      <td data-label="同步时间"><span class="cell-time">2026-08-10 13:07</span></td>
+                    </tr>
+                    <tr>
+                      <td data-label="邮箱地址"><span class="cell-email" title="slate.meadow.0164@icloud.com">slate.meadow.0164@icloud.com</span></td>
+                      <td data-label="状态"><span class="pill status-failed">失败</span></td>
+                      <td data-label="验证码" class="num"><span class="cell-time">—</span></td>
+                      <td data-label="同步时间"><span class="cell-time">2026-08-10 11:48</span></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section style="display:grid;gap:var(--space-4)">
+    <h2>组件文件</h2>
+    <p class="text-caption">整包引入用 <code class="mono">components.css</code>（它 <code class="mono">@import</code> 下列全部文件）；只要某一类组件时直接引用对应文件。</p>
+    <ul class="file-list">
+      <li class="file-row"><span class="mono">components/app-shell.css</span><span class="text-caption">AppShell / Sidebar / 侧栏导航 / 粘性顶栏</span></li>
+      <li class="file-row"><span class="mono">components/buttons.css</span><span class="text-caption">Button 五变体 × 三尺寸，含禁用与焦点环</span></li>
+      <li class="file-row"><span class="mono">components/cards-panels.css</span><span class="text-caption">Card / MetricCard / Panel 容器层</span></li>
+      <li class="file-row"><span class="mono">components/data-table.css</span><span class="text-caption">DataTable / 状态胶囊 / 空态 / 骨架 / 分页 / 窄屏转卡片</span></li>
+      <li class="file-row"><span class="mono">components/forms.css</span><span class="text-caption">Field / Input / Switch / Alert / Tabs</span></li>
+      <li class="file-row"><span class="mono">components/overlays.css</span><span class="text-caption">DangerZone / Dropdown / Modal / Log</span></li>
+    </ul>
+  </section>
+
+  <section style="display:grid;gap:var(--space-4)">
+    <h2>依赖文件</h2>
+    <ul class="file-list">
+      <li class="file-row"><span class="mono">../../colors_and_type.css</span><span class="text-caption">颜色与排版语义层，Light / Dark</span></li>
+      <li class="file-row"><span class="mono">../../tokens.css</span><span class="text-caption">间距 / 圆角 / 阴影 / 动效 / 密度</span></li>
+      <li class="file-row"><span class="mono">components.css</span><span class="text-caption">聚合入口，@import components/ 全部文件</span></li>
+      <li class="file-row"><span class="mono">../../assets/icons/</span><span class="text-caption">源实现提取的 6 个描边图标</span></li>
+    </ul>
+  </section>
+
+  <section style="display:grid;gap:var(--space-4)">
+    <h2>源实现对照</h2>
+    <p class="text-caption">下列文件是逐字保留的源模板，用于核对本套件是否忠实于真实产品结构与文案。</p>
+    <ul class="file-list">
+      <li class="file-row"><a class="mono" style="color:var(--accent-text)" href="../../examples/templates/workbench-index.html">examples/templates/workbench-index.html</a><span class="text-caption">主工作台</span></li>
+      <li class="file-row"><a class="mono" style="color:var(--accent-text)" href="../../examples/templates/account-manage.html">examples/templates/account-manage.html</a><span class="text-caption">账号数据管理</span></li>
+      <li class="file-row"><a class="mono" style="color:var(--accent-text)" href="../../examples/templates/login.html">examples/templates/login.html</a><span class="text-caption">登录与注册</span></li>
+    </ul>
+  </section>
+</div>
+
+<script>
+// 主题与密度切换：只改根元素属性，验证同一套组件在四种组合下的表现
+(function () {
+  var root = document.documentElement;
+  var themeBtn = document.getElementById('kitTheme');
+  var densityBtn = document.getElementById('kitDensity');
+
+  themeBtn.addEventListener('click', function () {
+    var dark = root.getAttribute('data-theme') === 'dark';
+    root.setAttribute('data-theme', dark ? 'light' : 'dark');
+    themeBtn.textContent = dark ? '深色主题' : '浅色主题';
+  });
+
+  densityBtn.addEventListener('click', function () {
+    var compact = root.getAttribute('data-density') === 'compact';
+    root.setAttribute('data-density', compact ? 'comfortable' : 'compact');
+    densityBtn.textContent = compact ? '紧凑密度' : '舒展密度';
+  });
+
+  // 表格行选中态：演示中性悬浮与强调色选中的区别
+  document.querySelectorAll('[data-od-id="composed-table"] tbody tr').forEach(function (row) {
+    row.addEventListener('click', function () {
+      var on = row.getAttribute('aria-selected') === 'true';
+      document.querySelectorAll('[data-od-id="composed-table"] tbody tr')
+        .forEach(function (r) { r.removeAttribute('aria-selected'); });
+      if (!on) row.setAttribute('aria-selected', 'true');
+    });
+  });
+})();
+</script>
+</body>
+</html>

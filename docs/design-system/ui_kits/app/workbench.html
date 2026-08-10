@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light" data-density="comfortable">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>工作台 — iCloud Privacy Mail 应用套件</title>
+<link rel="stylesheet" href="../../colors_and_type.css">
+<link rel="stylesheet" href="../../tokens.css">
+<link rel="stylesheet" href="components.css">
+<style>
+  /* 工作台专属：视图切换与验证码复制反馈 */
+  .view[hidden] { display: none; }
+  .view { display: flex; flex-direction: column; gap: var(--gap-panel); }
+  .toolbar { display: flex; align-items: center; gap: var(--gap-btn); flex-wrap: wrap; }
+  .toolbar-spacer { flex: 1; }
+  .login-group-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--gap-panel); }
+  @media (max-width: 1024px) { .login-group-grid { grid-template-columns: minmax(0, 1fr); } }
+  .code-copy {
+    display: inline-flex; align-items: center; gap: 6px;
+    border: 0; background: transparent; padding: 0; cursor: pointer;
+  }
+  .code-copy:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; border-radius: var(--radius-sm); }
+  .copy-flag { font: var(--text-caption); color: var(--success); }
+  .user-menu-wrap { position: relative; }
+  .user-menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 20; }
+  .user-menu[hidden] { display: none; }
+</style>
+</head>
+<body>
+<div class="app-shell" data-od-id="workbench-shell">
+
+  <aside class="sidebar" data-od-id="sidebar">
+    <div class="brand" data-od-id="brand-lockup">
+      <h1>iCloud Privacy Mail</h1>
+      <p class="brand-sub">隐私邮箱创建、同步和取码 API 工作台。</p>
+    </div>
+
+    <nav class="side-nav" aria-label="功能分类" data-od-id="side-nav">
+      <button class="nav-item active" data-view="overview" aria-current="page" data-od-id="nav-overview">
+        <span class="nav-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="7" height="7" rx="1.7"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.7"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.7"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.7"/></svg></span>
+        <span>概览</span>
+        <span class="count-dot">4</span>
+      </button>
+      <button class="nav-item" data-view="session" data-od-id="nav-session">
+        <span class="nav-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="9" r="4.6"/><path d="m12.4 12.4 7.6 7.6"/><path d="m16.6 16.6 2-2"/></svg></span>
+        <span>登录态</span>
+        <span class="count-dot">2</span>
+      </button>
+      <button class="nav-item" data-view="create" data-od-id="nav-create">
+        <span class="nav-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="17" height="17" rx="5"/><path d="M12 8.4v7.2M8.4 12h7.2"/></svg></span>
+        <span>创建邮箱</span>
+      </button>
+      <button class="nav-item" data-view="mailboxes" data-od-id="nav-mailboxes">
+        <span class="nav-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 13.4 6.3 6.7A2 2 0 0 1 8.2 5.4h7.6a2 2 0 0 1 1.9 1.3L20 13.4"/><path d="M4 13.4h4.2l1.3 2.2h5l1.3-2.2H20v3.7A1.9 1.9 0 0 1 18.1 19.2H5.9A1.9 1.9 0 0 1 4 17.1z"/></svg></span>
+        <span>邮箱池</span>
+        <span class="count-dot">18</span>
+      </button>
+    </nav>
+  </aside>
+
+  <div class="content">
+    <!-- 顶栏：源实现的 9 个交互元素收敛为「刷新状态」+ 用户下拉 -->
+    <header class="content-head" data-od-id="content-head">
+      <h2 id="activeViewTitle">概览</h2>
+      <div class="content-actions">
+        <button class="btn secondary" data-od-id="refresh-status">刷新状态</button>
+        <div class="user-menu-wrap">
+          <button class="btn ghost" id="userMenuBtn" aria-expanded="false" aria-haspopup="true" data-od-id="user-menu-trigger">
+            admin
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg>
+          </button>
+          <div class="dropdown user-menu" id="userMenu" role="menu" hidden data-od-id="user-menu">
+            <button class="dropdown-item" role="menuitem" onclick="location.href='account-manage.html'">账号数据</button>
+            <button class="dropdown-item" role="menuitem" id="themeToggle">切换深色主题</button>
+            <button class="dropdown-item" role="menuitem" id="densityToggle">切换紧凑密度</button>
+            <button class="dropdown-item" role="menuitem">运行配置</button>
+            <button class="dropdown-item" role="menuitem">退出登录</button>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <main class="content-main">
+
+      <!-- 概览：仅指标卡 + 最近活动，源实现的 4 张 quick-card 已删除 -->
+      <section class="view" id="view-overview" data-od-id="view-overview">
+        <div class="metric-grid" data-od-id="metric-grid">
+          <div class="metric-card" data-od-id="metric-accounts">
+            <span class="metric-label">登录账号</span>
+            <span class="metric-value">2</span>
+          </div>
+          <div class="metric-card" data-od-id="metric-mailboxes">
+            <span class="metric-label">隐私邮箱</span>
+            <span class="metric-value">18</span>
+          </div>
+          <div class="metric-card" data-od-id="metric-messages">
+            <span class="metric-label">验证码邮件</span>
+            <span class="metric-value">146</span>
+          </div>
+          <div class="metric-card" data-od-id="metric-api">
+            <span class="metric-label">API 状态</span>
+            <span class="metric-value" style="font-size:20px;line-height:28px">运行中</span>
+          </div>
+        </div>
+
+        <section class="panel" data-od-id="panel-recent">
+          <div class="panel-head">
+            <div>
+              <h2>最近活动</h2>
+              <p class="panel-desc">同步游标推进与验证码查询记录，时间为服务器本地时间。</p>
+            </div>
+            <button class="btn sm ghost">查看运行日志</button>
+          </div>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr><th>时间</th><th>邮箱</th><th>事件</th><th>状态</th></tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td data-label="时间"><span class="cell-time">14:22:07</span></td>
+                  <td data-label="邮箱"><span class="cell-email" title="quiet-harbor-8412@icloud.com">quiet-harbor-8412@icloud.com</span></td>
+                  <td data-label="事件">验证码查询</td>
+                  <td data-label="状态"><span class="pill status-available">可用</span></td>
+                </tr>
+                <tr>
+                  <td data-label="时间"><span class="cell-time">14:18:51</span></td>
+                  <td data-label="邮箱"><span class="cell-email" title="slate-meadow-2077@icloud.com">slate-meadow-2077@icloud.com</span></td>
+                  <td data-label="事件">同步游标推进</td>
+                  <td data-label="状态"><span class="pill status-used">已使用</span></td>
+                </tr>
+                <tr>
+                  <td data-label="时间"><span class="cell-time">14:05:33</span></td>
+                  <td data-label="邮箱"><span class="cell-email" title="amber-fern-5510@icloud.com">amber-fern-5510@icloud.com</span></td>
+                  <td data-label="事件">邮箱归属校验</td>
+                  <td data-label="状态"><span class="pill status-failed">失败</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
+      <!-- 登录态：源实现一条 toolbar 里的 6 个按钮拆为两张分组卡 -->
+      <section class="view" id="view-session" hidden data-od-id="view-session">
+        <div class="alert info" data-od-id="session-alert">
+          <div>
+            <span class="alert-title">Apple 登录流程由单个面板用户独占。</span>
+            两条接口互斥，请只推进其中一条到二次验证完成。
+          </div>
+        </div>
+
+        <div class="login-group-grid">
+          <section class="panel" data-od-id="panel-login-new">
+            <div class="panel-head">
+              <div>
+                <h2>新接口（Apple Account）</h2>
+                <p class="panel-desc">推荐路径，支持短信与受信设备两种验证方式。</p>
+              </div>
+              <span class="pill status-available">登录态有效</span>
+            </div>
+            <div class="panel-body">
+              <div class="field-grid">
+                <div class="field">
+                  <label class="field-label" for="newAppleId">Apple ID<span class="required">*</span></label>
+                  <input class="input" id="newAppleId" value="ops.owner@example.com" aria-describedby="newAppleIdErr">
+                  <p class="field-error" id="newAppleIdErr"></p>
+                </div>
+                <div class="field">
+                  <label class="field-label" for="newPassword">密码<span class="required">*</span></label>
+                  <input class="input" id="newPassword" type="password" value="············" aria-describedby="newPasswordErr">
+                  <p class="field-error" id="newPasswordErr"></p>
+                </div>
+                <div class="field full">
+                  <label class="field-label" for="newMethod">验证码方式</label>
+                  <select class="select" id="newMethod">
+                    <option>受信设备</option>
+                    <option>短信</option>
+                  </select>
+                  <p class="field-hint">受信设备无需填写手机号。</p>
+                </div>
+                <div class="field full">
+                  <label class="field-label" for="new2fa">2FA 验证码</label>
+                  <input class="input" id="new2fa" placeholder="6 位数字" inputmode="numeric">
+                  <p class="field-error" id="new2faErr"></p>
+                </div>
+              </div>
+              <div class="form-actions">
+                <button class="btn primary" data-od-id="new-login-submit">新接口登录</button>
+                <button class="btn secondary">提交验证码</button>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel" data-od-id="panel-login-legacy">
+            <div class="panel-head">
+              <div>
+                <h2>旧接口（iCloud Web）</h2>
+                <p class="panel-desc">兼容路径，仅在新接口不可用时启用。</p>
+              </div>
+              <span class="pill status-used">需 2FA</span>
+            </div>
+            <div class="panel-body">
+              <div class="field-grid">
+                <div class="field">
+                  <label class="field-label" for="legacyAppleId">Apple ID<span class="required">*</span></label>
+                  <input class="input" id="legacyAppleId" aria-invalid="true" aria-describedby="legacyAppleIdErr">
+                  <p class="field-error" id="legacyAppleIdErr">请输入完整的 Apple ID 邮箱地址</p>
+                </div>
+                <div class="field">
+                  <label class="field-label" for="legacyPassword">密码<span class="required">*</span></label>
+                  <input class="input" id="legacyPassword" type="password" aria-describedby="legacyPasswordErr">
+                  <p class="field-error" id="legacyPasswordErr"></p>
+                </div>
+                <div class="field full">
+                  <label class="field-label" for="legacyMethod">验证码方式</label>
+                  <select class="select" id="legacyMethod">
+                    <option>短信</option>
+                    <option>受信设备</option>
+                  </select>
+                  <p class="field-hint">旧接口的 2FA 窗口较短，请及时提交。</p>
+                </div>
+                <div class="field full">
+                  <label class="field-label" for="legacy2fa">2FA 验证码</label>
+                  <input class="input" id="legacy2fa" placeholder="6 位数字" inputmode="numeric">
+                  <p class="field-error" id="legacy2faErr"></p>
+                </div>
+              </div>
+              <div class="form-actions">
+                <button class="btn secondary" data-od-id="legacy-login-submit">旧接口登录</button>
+                <button class="btn secondary">提交验证码</button>
+                <span class="toolbar-spacer"></span>
+                <button class="btn ghost">检测登录态</button>
+              </div>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <!-- 创建邮箱 -->
+      <section class="view" id="view-create" hidden data-od-id="view-create">
+        <section class="panel" style="max-width:520px">
+          <div class="panel-head">
+            <div>
+              <h2>创建隐私邮箱</h2>
+              <p class="panel-desc">邮箱创建后立即写入邮箱池，并生成独立访问凭据。</p>
+            </div>
+          </div>
+          <div class="panel-body">
+            <div style="display:grid;gap:var(--gap-field)">
+              <div class="field">
+                <label class="field-label" for="createLabel">标签<span class="required">*</span></label>
+                <input class="input" id="createLabel" placeholder="例如 注册-A 组" aria-describedby="createLabelErr">
+                <p class="field-error" id="createLabelErr"></p>
+              </div>
+              <div class="field">
+                <label class="field-label" for="createNote">备注</label>
+                <textarea class="textarea" id="createNote" placeholder="用途、归属人或到期提醒"></textarea>
+              </div>
+              <div class="field">
+                <label class="field-label" for="createApi">普通创建接口</label>
+                <select class="select" id="createApi">
+                  <option>新接口（Apple Account）</option>
+                  <option>旧接口（iCloud Web）</option>
+                </select>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="scheduleToggle">
+                <span class="track" aria-hidden="true"></span>
+                <span class="text-label" style="color:var(--fg)">开启定时创建</span>
+              </label>
+              <div class="field-grid">
+                <div class="field">
+                  <label class="field-label" for="intervalMin">定时间隔（分钟）</label>
+                  <input class="input input-num" id="intervalMin" value="30" inputmode="numeric">
+                </div>
+                <div class="field">
+                  <label class="field-label" for="intervalSec">每轮间隔（秒）</label>
+                  <input class="input input-num" id="intervalSec" value="8" inputmode="numeric">
+                </div>
+              </div>
+            </div>
+            <div class="form-actions">
+              <button class="btn primary" data-od-id="create-submit">开始创建</button>
+              <button class="btn ghost">同步已有邮箱</button>
+            </div>
+          </div>
+        </section>
+      </section>
+
+      <!-- 邮箱池：核心表格视图 -->
+      <section class="view" id="view-mailboxes" hidden data-od-id="view-mailboxes">
+        <section class="panel" data-od-id="panel-mailbox-pool">
+          <div class="panel-head">
+            <div>
+              <h2>隐私邮箱池</h2>
+              <p class="panel-desc">验证码为幂等读取，有效期内可重复取用。</p>
+            </div>
+            <div class="toolbar">
+              <input class="input" style="width:200px" type="search" placeholder="搜索邮箱或标签" aria-label="全局搜索邮箱">
+              <select class="select" style="width:120px" aria-label="同步范围">
+                <option>全部</option>
+                <option>仅可用</option>
+                <option>仅失败</option>
+              </select>
+              <button class="btn sm secondary">同步已有邮箱</button>
+            </div>
+          </div>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>标签</th><th>邮箱</th><th>状态</th><th class="num">收件</th><th>验证码</th><th style="text-align:right">操作</th>
+                </tr>
+              </thead>
+              <tbody id="mailboxRows">
+                <tr aria-selected="true">
+                  <td data-label="标签"><span class="text-body-strong">注册-A 组</span></td>
+                  <td data-label="邮箱"><span class="cell-email" title="quiet-harbor-8412@icloud.com">quiet-harbor-8412@icloud.com</span></td>
+                  <td data-label="状态"><span class="pill status-available">可用</span></td>
+                  <td data-label="收件" class="num">12</td>
+                  <td data-label="验证码">
+                    <button class="code-copy" data-code="481920">
+                      <span class="code-value">481920</span>
+                    </button>
+                  </td>
+                  <td data-label="操作">
+                    <div class="row-actions">
+                      <button class="btn sm ghost">复制邮箱</button>
+                      <button class="btn sm ghost" aria-label="更多操作">⋯</button>
+                    </div>
+                  </td>
+                </tr>
+                <tr>
+                  <td data-label="标签"><span class="text-body-strong">注册-B 组</span></td>
+                  <td data-label="邮箱"><span class="cell-email" title="slate-meadow-2077@icloud.com">slate-meadow-2077@icloud.com</span></td>
+                  <td data-label="状态"><span class="pill status-used">已使用</span></td>
+                  <td data-label="收件" class="num">7</td>
+                  <td data-label="验证码">
+                    <button class="code-copy" data-code="305177">
+                      <span class="code-value">305177</span>
+                    </button>
+                  </td>
+                  <td data-label="操作">
+                    <div class="row-actions">
+                      <button class="btn sm ghost">复制邮箱</button>
+                      <button class="btn sm ghost" aria-label="更多操作">⋯</button>
+                    </div>
+                  </td>
+                </tr>
+                <tr>
+                  <td data-label="标签"><span class="text-body-strong">客服工单</span></td>
+                  <td data-label="邮箱"><span class="cell-email" title="amber-fern-5510@icloud.com">amber-fern-5510@icloud.com</span></td>
+                  <td data-label="状态"><span class="pill status-failed">失败</span></td>
+                  <td data-label="收件" class="num">0</td>
+                  <td data-label="验证码"><span class="text-caption">无有效验证码</span></td>
+                  <td data-label="操作">
+                    <div class="row-actions">
+                      <button class="btn sm ghost">复制邮箱</button>
+                      <button class="btn sm ghost" aria-label="更多操作">⋯</button>
+                    </div>
+                  </td>
+                </tr>
+                <tr>
+                  <td data-label="标签"><span class="text-body-strong">长期占位</span></td>
+                  <td data-label="邮箱"><span class="cell-email" title="linen-cobble-9034@icloud.com">linen-cobble-9034@icloud.com</span></td>
+                  <td data-label="状态"><span class="pill status-disabled">停用</span></td>
+                  <td data-label="收件" class="num">3</td>
+                  <td data-label="验证码"><span class="text-caption">无有效验证码</span></td>
+                  <td data-label="操作">
+                    <div class="row-actions">
+                      <button class="btn sm ghost">复制邮箱</button>
+                      <button class="btn sm ghost" aria-label="更多操作">⋯</button>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="pager">
+            <span>共 18 条</span>
+            <div class="pager-controls">
+              <label class="text-caption" for="pageSize">每页</label>
+              <select class="select" id="pageSize" style="width:72px;min-height:28px">
+                <option>20</option><option>50</option><option>100</option>
+              </select>
+              <button class="btn sm secondary" disabled>上一页</button>
+              <button class="btn sm secondary">下一页</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel" data-od-id="panel-empty-example">
+          <div class="panel-head">
+            <div>
+              <h2>筛选无结果示例</h2>
+              <p class="panel-desc">空态区分「无数据」与「筛选无结果」两种文案。</p>
+            </div>
+          </div>
+          <div class="empty-state">
+            <p class="empty-title">没有匹配的隐私邮箱</p>
+            <p class="empty-desc">当前筛选条件下没有记录，可清空搜索后重试。</p>
+            <button class="btn secondary">清空搜索</button>
+          </div>
+        </section>
+      </section>
+
+    </main>
+
+    <div class="log" data-od-id="run-log">[14:22:07] code query ok mailbox=quiet-harbor-8412 fresh=true
+[14:18:51] sync cursor advanced mailbox=slate-meadow-2077 uid=10394
+[14:05:33] ownership check failed mailbox=amber-fern-5510 reason=recipient_mismatch</div>
+  </div>
+</div>
+
+<script>
+  // 视图切换：与源实现 setActiveView 的行为一致，标题同步更新
+  const viewTitles = { overview: '概览', session: 'Apple 登录', create: '创建隐私邮箱', mailboxes: '隐私邮箱池' };
+  const navButtons = document.querySelectorAll('.nav-item');
+  function setActiveView(view) {
+    navButtons.forEach(btn => {
+      const on = btn.dataset.view === view;
+      btn.classList.toggle('active', on);
+      if (on) { btn.setAttribute('aria-current', 'page'); } else { btn.removeAttribute('aria-current'); }
+    });
+    document.querySelectorAll('.view').forEach(sec => {
+      sec.hidden = sec.id !== 'view-' + view;
+    });
+    document.getElementById('activeViewTitle').textContent = viewTitles[view] || view;
+    // 持久化当前视图，禁止 scrollIntoView
+    try { localStorage.setItem('icpm.view', view); } catch (e) {}
+  }
+  navButtons.forEach(btn => btn.addEventListener('click', () => setActiveView(btn.dataset.view)));
+  try {
+    const saved = localStorage.getItem('icpm.view');
+    if (saved && viewTitles[saved]) setActiveView(saved);
+  } catch (e) {}
+
+  // 用户下拉菜单：收纳源实现顶栏里的低频操作
+  const menuBtn = document.getElementById('userMenuBtn');
+  const menu = document.getElementById('userMenu');
+  menuBtn.addEventListener('click', () => {
+    const open = menu.hidden;
+    menu.hidden = !open;
+    menuBtn.setAttribute('aria-expanded', String(open));
+  });
+  document.addEventListener('click', e => {
+    if (!menu.hidden && !menu.contains(e.target) && !menuBtn.contains(e.target)) {
+      menu.hidden = true;
+      menuBtn.setAttribute('aria-expanded', 'false');
+    }
+  });
+
+  // 主题与密度切换：只有 2 套主题 + 2 档密度
+  const root = document.documentElement;
+  document.getElementById('themeToggle').addEventListener('click', function () {
+    const dark = root.dataset.theme === 'dark';
+    root.dataset.theme = dark ? 'light' : 'dark';
+    this.textContent = dark ? '切换深色主题' : '切换浅色主题';
+  });
+  document.getElementById('densityToggle').addEventListener('click', function () {
+    const compact = root.dataset.density === 'compact';
+    root.dataset.density = compact ? 'comfortable' : 'compact';
+    this.textContent = compact ? '切换紧凑密度' : '切换舒展密度';
+  });
+
+  // 验证码复制：幂等读取，成功后 2s 内提示「已复制」
+  document.getElementById('mailboxRows').addEventListener('click', e => {
+    const btn = e.target.closest('.code-copy');
+    if (!btn) return;
+    const code = btn.dataset.code;
+    if (navigator.clipboard) navigator.clipboard.writeText(code).catch(() => {});
+    let flag = btn.querySelector('.copy-flag');
+    if (!flag) {
+      flag = document.createElement('span');
+      flag.className = 'copy-flag';
+      btn.appendChild(flag);
+    }
+    flag.textContent = '已复制';
+    clearTimeout(btn._t);
+    btn._t = setTimeout(() => flag.remove(), 2000);
+  });
+
+  // 行选中：中性悬浮 + 强调色选中，二者不混用
+  document.getElementById('mailboxRows').addEventListener('click', e => {
+    const row = e.target.closest('tr');
+    if (!row || e.target.closest('button')) return;
+    document.querySelectorAll('#mailboxRows tr').forEach(r => r.removeAttribute('aria-selected'));
+    row.setAttribute('aria-selected', 'true');
+  });
+</script>
+</body>
+</html>

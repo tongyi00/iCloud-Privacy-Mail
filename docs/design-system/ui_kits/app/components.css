@@ -1,0 +1,22 @@
+/* ==========================================================================
+   iCloud Privacy Mail — 应用组件层（聚合入口）
+   依赖：../../colors_and_type.css + ../../tokens.css（必须先引入）
+   来源证据：examples/templates/{workbench-index,account-manage,login}.html
+
+   规则：无渐变、无 backdrop-filter（仅粘性顶栏）、无 transform 悬浮、
+   字重 ≤600、圆角 ∈ {4,6,8,999}px、阴影 ∈ {dropdown, modal, sticky}。
+
+   组件按职责拆分在 components/ 下，本文件只做聚合，便于整包引入。
+   只需要其中一类组件时，直接引用对应的 components/*.css。
+   引入顺序有意义：外壳 → 按钮 → 容器 → 表格 → 表单 → 浮层。
+   ========================================================================== */
+
+/* @import 必须位于所有普通规则之前，否则会被浏览器忽略 */
+@import "components/app-shell.css";     /* AppShell / Sidebar / 粘性顶栏 */
+@import "components/buttons.css";       /* Button 五变体三尺寸 */
+@import "components/cards-panels.css";  /* Card / MetricCard / Panel */
+@import "components/data-table.css";    /* DataTable / 状态胶囊 / 空态 / 骨架 */
+@import "components/forms.css";         /* Field / Input / Switch / Alert / Tabs */
+@import "components/overlays.css";      /* DangerZone / Dropdown / Modal / Log */
+
+*, *::before, *::after { box-sizing: border-box; }

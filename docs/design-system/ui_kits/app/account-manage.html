@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light" data-density="compact">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>账号数据管理 — iCloud Privacy Mail 应用套件</title>
+<link rel="stylesheet" href="../../colors_and_type.css">
+<link rel="stylesheet" href="../../tokens.css">
+<link rel="stylesheet" href="components.css">
+<style>
+  .manage-main { display: flex; flex-direction: column; gap: var(--gap-panel); }
+  .modal-backdrop {
+    position: fixed; inset: 0; z-index: 40;
+    display: grid; place-items: center;
+    padding: var(--space-6);
+    background: oklch(20% 0.02 250 / 0.4);
+  }
+  .modal-backdrop[hidden] { display: none; }
+  .modal-body { padding: var(--pad-panel); display: grid; gap: var(--gap-field); }
+  .modal-actions {
+    display: flex; gap: var(--gap-btn); align-items: center;
+    padding: var(--space-3) var(--space-4);
+    border-top: 1px solid var(--border);
+  }
+  .toolbar { display: flex; align-items: center; gap: var(--gap-btn); flex-wrap: wrap; }
+</style>
+</head>
+<body>
+<div class="app-shell" style="grid-template-columns:minmax(0,1fr)" data-od-id="manage-shell">
+  <div class="content">
+    <header class="content-head" data-od-id="manage-head">
+      <h2>账号数据管理</h2>
+      <div class="content-actions">
+        <button class="btn secondary" data-od-id="manage-refresh">刷新</button>
+        <button class="btn ghost" id="openConfig" data-od-id="open-config">运行配置</button>
+        <button class="btn ghost" onclick="location.href='workbench.html'">返回工作台</button>
+      </div>
+    </header>
+
+    <main class="content-main manage-main">
+      <div class="metric-grid">
+        <div class="metric-card"><span class="metric-label">面板用户</span><span class="metric-value">4</span></div>
+        <div class="metric-card"><span class="metric-label">隐私邮箱</span><span class="metric-value">18</span></div>
+        <div class="metric-card"><span class="metric-label">登录账号</span><span class="metric-value">2</span></div>
+        <div class="metric-card"><span class="metric-label">运行日志</span><span class="metric-value">312</span></div>
+      </div>
+
+      <section class="panel" data-od-id="panel-users">
+        <div class="panel-head">
+          <div>
+            <h2>用户列表</h2>
+            <p class="panel-desc">用户开通与关闭均为管理员受控操作，不支持匿名注册。</p>
+          </div>
+          <button class="btn sm primary" data-od-id="create-user">开通用户</button>
+        </div>
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr><th>ID</th><th>账号</th><th>角色</th><th>状态</th><th>创建时间</th><th>最后登录</th><th style="text-align:right">操作</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td data-label="ID"><span class="mono">1</span></td>
+                <td data-label="账号"><span class="text-body-strong">admin</span></td>
+                <td data-label="角色">管理员</td>
+                <td data-label="状态"><span class="pill status-available">活跃</span></td>
+                <td data-label="创建时间"><span class="cell-time">2026-06-02 09:14</span></td>
+                <td data-label="最后登录"><span class="cell-time">2026-08-10 14:20</span></td>
+                <td data-label="操作"><div class="row-actions"><button class="btn sm ghost">重置密码</button></div></td>
+              </tr>
+              <tr>
+                <td data-label="ID"><span class="mono">7</span></td>
+                <td data-label="账号"><span class="text-body-strong">ops.reader</span></td>
+                <td data-label="角色">普通用户</td>
+                <td data-label="状态"><span class="pill status-available">活跃</span></td>
+                <td data-label="创建时间"><span class="cell-time">2026-07-18 11:02</span></td>
+                <td data-label="最后登录"><span class="cell-time">2026-08-09 21:47</span></td>
+                <td data-label="操作">
+                  <div class="row-actions">
+                    <button class="btn sm ghost">重置密码</button>
+                    <button class="btn sm danger">关闭</button>
+                  </div>
+                </td>
+              </tr>
+              <tr>
+                <td data-label="ID"><span class="mono">9</span></td>
+                <td data-label="账号"><span class="text-body-strong">temp.audit</span></td>
+                <td data-label="角色">普通用户</td>
+                <td data-label="状态"><span class="pill status-used">停止中</span></td>
+                <td data-label="创建时间"><span class="cell-time">2026-08-01 16:30</span></td>
+                <td data-label="最后登录"><span class="cell-time">2026-08-08 10:12</span></td>
+                <td data-label="操作"><div class="row-actions"><button class="btn sm ghost" disabled>等待后台停止</button></div></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel" data-od-id="panel-mailbox-data">
+        <div class="panel-head">
+          <div>
+            <h2>隐私邮箱数据</h2>
+            <p class="panel-desc">归属依据结构化收件人地址，主题与发件人不构成归属证据。</p>
+          </div>
+          <div class="toolbar">
+            <input class="input" style="width:180px" type="search" placeholder="搜索邮箱" aria-label="搜索邮箱">
+          </div>
+        </div>
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr><th>ID</th><th>归属</th><th>标签</th><th>邮箱</th><th>状态</th><th class="num">收件</th><th>创建时间</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td data-label="ID"><span class="mono">104</span></td>
+                <td data-label="归属">admin</td>
+                <td data-label="标签"><span class="text-body-strong">注册-A 组</span></td>
+                <td data-label="邮箱"><span class="cell-email" title="quiet-harbor-8412@icloud.com">quiet-harbor-8412@icloud.com</span></td>
+                <td data-label="状态"><span class="pill status-available">可用</span></td>
+                <td data-label="收件" class="num">12</td>
+                <td data-label="创建时间"><span class="cell-time">2026-08-04 13:11</span></td>
+              </tr>
+              <tr>
+                <td data-label="ID"><span class="mono">118</span></td>
+                <td data-label="归属">ops.reader</td>
+                <td data-label="标签"><span class="text-body-strong">注册-B 组</span></td>
+                <td data-label="邮箱"><span class="cell-email" title="slate-meadow-2077@icloud.com">slate-meadow-2077@icloud.com</span></td>
+                <td data-label="状态"><span class="pill status-used">已使用</span></td>
+                <td data-label="收件" class="num">7</td>
+                <td data-label="创建时间"><span class="cell-time">2026-08-06 08:52</span></td>
+              </tr>
+              <tr>
+                <td data-label="ID"><span class="mono">126</span></td>
+                <td data-label="归属">admin</td>
+                <td data-label="标签"><span class="text-body-strong">客服工单</span></td>
+                <td data-label="邮箱"><span class="cell-email" title="amber-fern-5510@icloud.com">amber-fern-5510@icloud.com</span></td>
+                <td data-label="状态"><span class="pill status-failed">失败</span></td>
+                <td data-label="收件" class="num">0</td>
+                <td data-label="创建时间"><span class="cell-time">2026-08-09 19:04</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel" data-od-id="panel-skeleton">
+        <div class="panel-head">
+          <div>
+            <h2>登录账号数据</h2>
+            <p class="panel-desc">加载中使用骨架行，保持行数与行高，避免布局跳动。</p>
+          </div>
+        </div>
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr><th>ID</th><th>归属</th><th>Apple ID</th><th>状态</th><th>备注</th><th>创建时间</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><div class="skeleton-bar" style="width:32px"></div></td><td><div class="skeleton-bar" style="width:56px"></div></td><td><div class="skeleton-bar" style="width:180px"></div></td><td><div class="skeleton-bar" style="width:64px"></div></td><td><div class="skeleton-bar" style="width:96px"></div></td><td><div class="skeleton-bar" style="width:120px"></div></td></tr>
+              <tr><td><div class="skeleton-bar" style="width:32px"></div></td><td><div class="skeleton-bar" style="width:56px"></div></td><td><div class="skeleton-bar" style="width:160px"></div></td><td><div class="skeleton-bar" style="width:64px"></div></td><td><div class="skeleton-bar" style="width:80px"></div></td><td><div class="skeleton-bar" style="width:120px"></div></td></tr>
+              <tr><td><div class="skeleton-bar" style="width:32px"></div></td><td><div class="skeleton-bar" style="width:56px"></div></td><td><div class="skeleton-bar" style="width:200px"></div></td><td><div class="skeleton-bar" style="width:64px"></div></td><td><div class="skeleton-bar" style="width:72px"></div></td><td><div class="skeleton-bar" style="width:120px"></div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <div class="log">[14:22:07] export mailbox api list rows=18
+[14:20:44] user close requested id=9 stage=await_background_stop
+[14:12:19] admin bootstrap already completed, public init disabled</div>
+  </div>
+</div>
+
+<!-- 运行配置弹窗：导出归一为一组，「一键删除码」隔离进危险区并二次确认 -->
+<div class="modal-backdrop" id="configModal" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="configTitle" data-od-id="config-modal">
+    <div class="panel-head">
+      <h2 id="configTitle">运行配置</h2>
+      <button class="btn ghost sm" id="closeConfig">关闭</button>
+    </div>
+    <div class="modal-body">
+      <div class="field">
+        <label class="field-label" for="exportScope">导出范围</label>
+        <select class="select" id="exportScope">
+          <option>全部数据</option>
+          <option>邮箱 + API 凭据</option>
+          <option>仅邮箱地址</option>
+        </select>
+      </div>
+      <div class="field">
+        <label class="field-label" for="exportFormat">导出格式</label>
+        <select class="select" id="exportFormat">
+          <option>JSON</option>
+          <option>CSV</option>
+        </select>
+      </div>
+      <div class="field">
+        <label class="field-label" for="autoInterval">自动检测间隔（分钟）</label>
+        <input class="input input-num" id="autoInterval" value="15" inputmode="numeric">
+        <p class="field-hint">设为 0 表示关闭自动检测。</p>
+      </div>
+
+      <div class="danger-zone" data-od-id="danger-zone">
+        <p class="danger-zone-title">危险操作</p>
+        <p class="danger-zone-desc">一键删除码会清除远端全部已缓存验证码，操作不可撤销。</p>
+        <div>
+          <button class="btn danger" id="dangerStep1">一键删除码</button>
+          <button class="btn danger-solid" id="dangerStep2" hidden>确认删除，不可撤销</button>
+          <button class="btn ghost" id="dangerCancel" hidden>取消</button>
+        </div>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn primary" data-od-id="config-export">导出数据</button>
+      <button class="btn ghost" id="closeConfig2">关闭</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  // 运行配置弹窗开关
+  const modal = document.getElementById('configModal');
+  document.getElementById('openConfig').addEventListener('click', () => { modal.hidden = false; });
+  ['closeConfig', 'closeConfig2'].forEach(id =>
+    document.getElementById(id).addEventListener('click', () => { modal.hidden = true; resetDanger(); })
+  );
+  modal.addEventListener('click', e => { if (e.target === modal) { modal.hidden = true; resetDanger(); } });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && !modal.hidden) { modal.hidden = true; resetDanger(); }
+  });
+
+  // 不可逆远端删除必须二次确认：第一步只暴露确认按钮，不执行任何操作
+  const step1 = document.getElementById('dangerStep1');
+  const step2 = document.getElementById('dangerStep2');
+  const cancel = document.getElementById('dangerCancel');
+  function resetDanger() { step1.hidden = false; step2.hidden = true; cancel.hidden = true; }
+  step1.addEventListener('click', () => { step1.hidden = true; step2.hidden = false; cancel.hidden = false; });
+  cancel.addEventListener('click', resetDanger);
+  step2.addEventListener('click', () => { resetDanger(); modal.hidden = true; });
+</script>
+</body>
+</html>

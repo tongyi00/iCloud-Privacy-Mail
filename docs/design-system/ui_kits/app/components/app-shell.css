@@ -1,0 +1,116 @@
+/* ==========================================================================
+   iCloud Privacy Mail — 应用外壳 / App shell + Sidebar + 粘性顶栏
+   依赖：../../../colors_and_type.css + ../../../tokens.css（必须先引入）
+   来源证据：examples/templates/{workbench-index,account-manage,login}.html
+   本文件由 ui_kits/app/components.css 聚合引入，也可单独引用。
+   ========================================================================== */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+/* --------------------------------------------------------------------------
+   应用外壳：侧栏 240px + 内容区
+   -------------------------------------------------------------------------- */
+.app-shell {
+  display: grid;
+  grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
+  min-height: 100vh;
+}
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-5) var(--space-4);
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+}
+
+/* 品牌区：实色表面 + 发丝边框，无渐变、无 .eyebrow 层级 */
+.brand { display: grid; gap: var(--space-1); }
+.brand h1 { font: var(--text-h2); letter-spacing: var(--tracking-h2); }
+.brand .brand-sub { font: var(--text-caption); color: var(--muted); }
+
+.side-nav { display: grid; gap: 2px; }
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: 34px;
+  padding: 0 var(--space-3);
+  border: 0;
+  border-left: 2px solid transparent;   /* 当前项指示条占位，避免布局跳动 */
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--fg-secondary);
+  font: var(--text-body);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--dur) var(--ease),
+              color var(--dur) var(--ease),
+              border-color var(--dur) var(--ease);
+}
+.nav-item:hover { background: var(--surface-hover); color: var(--fg); }
+.nav-item[aria-current="page"],
+.nav-item.active {
+  background: var(--accent-subtle);
+  color: var(--accent-text);
+  border-left-color: var(--accent);
+}
+.nav-item:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+
+.nav-ico { display: inline-flex; width: 16px; height: 16px; flex: none; }
+.nav-ico svg { width: 16px; height: 16px; }
+.nav-item > span:nth-of-type(1):not(.nav-ico) { flex: 1; min-width: 0; }
+
+/* 导航计数点：胶囊形的两个合法用途之一 */
+.count-dot {
+  min-width: 20px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: var(--radius-full);
+  background: var(--neutral-bg);
+  color: var(--neutral-badge);
+  font: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  line-height: 18px;
+}
+
+.content { display: flex; flex-direction: column; min-width: 0; }
+
+/* 粘性顶栏是全站唯一允许 backdrop-filter 的位置 */
+.content-head {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--pad-page);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.content-actions { display: flex; align-items: center; gap: var(--gap-btn); }
+
+.content-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-panel);
+  width: 100%;
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: var(--pad-page);
+}
+
+/* 侧栏在 ≤1120px 折叠为顶部横向导航 */
+@media (max-width: 1120px) {
+  .app-shell { grid-template-columns: minmax(0, 1fr); }
+  .sidebar { border-right: 0; border-bottom: 1px solid var(--border); }
+  .side-nav { grid-template-columns: repeat(4, minmax(0, 1fr)); grid-auto-flow: column; }
+}
+@media (max-width: 680px) {
+  .side-nav { grid-auto-flow: row; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

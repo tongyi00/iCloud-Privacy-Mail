@@ -1,0 +1,80 @@
+/* ==========================================================================
+   iCloud Privacy Mail — 间距 / 圆角 / 阴影 / 动效令牌
+   来源证据：internal/app/templates/index.html 的 :root 令牌块与 data-density 实现
+   （见 examples/templates/workbench-index.html）。
+
+   与 colors_and_type.css 配套使用：颜色与排版在那边，结构性令牌在这里。
+   ========================================================================== */
+
+:root {
+  /* 间距：4px 基准栅格，只允许以下刻度 */
+  --space-1: 4px;   --space-2: 8px;   --space-3: 12px;  --space-4: 16px;
+  --space-5: 20px;  --space-6: 24px;  --space-8: 32px;  --space-10: 40px;
+  --space-12: 48px; --space-16: 64px;
+
+  /* 圆角：仅 4 档。面板与卡片上限 8px，胶囊只留给状态标签与计数点 */
+  --radius-sm:   4px;   /* 复选框、状态点、小徽章、骨架条 */
+  --radius-md:   6px;   /* 按钮、输入框、下拉、分段控件项 */
+  --radius-lg:   8px;   /* 面板、卡片、弹窗、模态 */
+  --radius-full: 999px; /* 仅状态胶囊与导航计数点 */
+
+  /* 阴影：只服务于真实浮起的浮层。页面内卡片 / 面板 / 表格一律无阴影 */
+  --shadow-dropdown: 0 4px 12px oklch(20% 0.02 250 / 0.08),
+                     0 1px 2px  oklch(20% 0.02 250 / 0.06);
+  --shadow-modal:    0 16px 40px oklch(20% 0.02 250 / 0.14),
+                     0 2px 6px   oklch(20% 0.02 250 / 0.08);
+  --shadow-sticky:   0 1px 0 var(--border);  /* 粘性表头分隔线，非投影 */
+
+  /* 动效预算：只过渡颜色类属性，禁止 transform 悬浮 */
+  --dur-fast: 100ms;
+  --dur:      140ms;
+  --ease:     cubic-bezier(0.2, 0, 0.2, 1);
+
+  /* 布局：侧栏 240px（源实现 286px 偏宽），内容区最大 1440px */
+  --sidebar-w:     240px;
+  --content-max:   1440px;
+  --breakpoint-nav:   1120px; /* 以下侧栏收为顶部横向导航 */
+  --breakpoint-table:  820px; /* 以下表格转卡片列表 */
+
+  /* 密度：舒展（默认）。两档只改 padding 与 gap */
+  --pad-page:      var(--space-6);          /* 页面左右边距 24px */
+  --pad-panel:     var(--space-5) var(--space-6);
+  --pad-panel-head:var(--space-4) var(--space-6);
+  --gap-panel:     var(--space-4);          /* 面板之间 16px */
+  --gap-card:      var(--space-3);          /* 卡片网格 12px */
+  --pad-cell:      var(--space-3) var(--space-4);
+  --row-h:         48px;
+  --gap-field:     var(--space-4);          /* 表单字段纵向 16px */
+  --gap-label:     6px;
+  --gap-btn:       var(--space-2);
+  --control-h:     36px;                    /* 舒展态输入框高度 */
+}
+
+/* 紧凑密度：源实现的 data-density 是真实运维需求，保留 */
+[data-density="compact"] {
+  --pad-page:      var(--space-4);
+  --pad-panel:     14px var(--space-4);
+  --pad-panel-head:var(--space-3) var(--space-4);
+  --gap-panel:     var(--space-3);
+  --gap-card:      var(--space-2);
+  --pad-cell:      var(--space-2) var(--space-3);
+  --row-h:         40px;
+  --gap-field:     var(--space-3);
+  --control-h:     32px;
+}
+
+/* Dark 模式：浮层改用更强边框，而不是更黑的阴影 */
+[data-theme="dark"] {
+  --shadow-dropdown: 0 4px 12px oklch(0% 0 0 / 0.4);
+  --shadow-modal:    0 16px 40px oklch(0% 0 0 / 0.5);
+}
+
+/* 移动端触达目标 ≥44px：抬高最小高度，不放大字号 */
+@media (max-width: 680px) {
+  :root { --control-h: 44px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --dur-fast: 0ms; --dur: 0ms; }
+  *, *::before, *::after { transition-duration: 0ms !important; animation: none !important; }
+}

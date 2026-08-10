@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>iCloud Privacy Mail</title>
   <style>
-    /* ===== 设计令牌层：依据 docs/DESIGN.md 第 3 节 =====
+    /* ===== 设计令牌层：依据 docs/design-system/DESIGN.md 第 3 节 =====
        语义化命名，主题只覆盖语义层，组件层不感知主题。
        历史别名（--green/--line/--glass 等）已全部清除，
        新增样式只能引用本层令牌，不得再引入别名或裸值。 */
@@ -1186,7 +1186,7 @@
       .card strong { font-size: 28px; }
     }
     /* ===== 动效层 =====
-       依据 docs/DESIGN.md 第 7 节动效预算：只过渡颜色与边框，
+       依据 docs/design-system/DESIGN.md 第 7 节动效预算：只过渡颜色与边框，
        不做位移、缩放、旋转、扫光，也不做入场关键帧。 */
     /* 数字统一等宽，避免刷新与翻页时列宽跳动 */
     .card strong,
@@ -1683,7 +1683,7 @@
       setActiveView(saved);
     }
 
-    // 主题按 docs/DESIGN.md 2.3 节收敛为 light / dark 两套
+    // 主题按 docs/design-system/DESIGN.md 2.3 节收敛为 light / dark 两套
     const THEME_SLUGS = ['light', 'dark'];
     // 旧版本 localStorage 里可能残留已废弃的主题名，按明暗归类迁移
     const LEGACY_THEME_MAP = {

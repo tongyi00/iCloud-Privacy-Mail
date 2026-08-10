@@ -1,0 +1,251 @@
+/* ==========================================================================
+   iCloud Privacy Mail — 颜色与排版基础层
+   来源证据：internal/app/templates/{index,manage,login}.html 的 :root 令牌块
+   （见 examples/templates/ 保留副本）。所有色值逐字取自源实现，未重新调色。
+
+   用法：把本文件与 tokens.css 一起在第一个 <style> 之前引入，或整段粘贴进
+   第一个 <style>。组件层只消费语义变量，不感知主题。
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   1. Light（默认主题）
+   -------------------------------------------------------------------------- */
+:root {
+  color-scheme: light;
+
+  /* 中性层：界面主体是灰阶，层次靠 1px 发丝边框而非阴影建立 */
+  --bg:              oklch(99% 0.002 240);   /* 页面底色 */
+  --surface:         oklch(100% 0 0);        /* 卡片 / 面板 / 表格 */
+  --surface-sunken:  oklch(97.5% 0.003 250); /* 表头 / 日志 / 只读区 */
+  --surface-hover:   oklch(97% 0.004 250);   /* 行与列表项悬浮（中性，非品牌色） */
+  --fg:              oklch(18% 0.012 250);   /* 主文本 */
+  --fg-secondary:    oklch(38% 0.012 250);   /* 次要文本 / 表单标签 */
+  --muted:           oklch(54% 0.012 250);   /* 辅助说明 / 表头 / 时间 */
+  --border:          oklch(92% 0.005 250);   /* 发丝边框 */
+  --border-strong:   oklch(86% 0.006 250);   /* 输入框 / 分组边框 */
+
+  /* 强调色：全站唯一品牌色，一屏内实心填充最多出现 2 次 */
+  --accent:          oklch(58% 0.18 255);    /* 实心填充底色 */
+  --accent-fg:       oklch(100% 0 0);        /* 填充上的文字 */
+  --accent-hover:    oklch(52% 0.18 255);    /* 填充悬浮 */
+  --accent-text:     oklch(48% 0.19 255);    /* 白底上的强调文字 / 链接 / 验证码 */
+  --accent-subtle:   oklch(96% 0.02 255);    /* 选中行 / 当前导航项背景 */
+  --accent-border:   oklch(82% 0.08 255);
+
+  /* 状态色三件套：前景 / 背景 / 边框。语义来自源项目的邮箱与登录态 */
+  --success:         oklch(48% 0.13 155);    /* 可用 / 登录态有效 */
+  --success-bg:      oklch(96.5% 0.03 155);
+  --success-border:  oklch(85% 0.07 155);
+  --warning:         oklch(52% 0.12 75);     /* 已使用 / 需 2FA / 可更新 */
+  --warning-bg:      oklch(96.5% 0.04 85);
+  --warning-border:  oklch(85% 0.08 80);
+  --danger:          oklch(52% 0.19 25);     /* 失败 / 停用 / 不可逆操作 */
+  --danger-bg:       oklch(96.5% 0.03 25);
+  --danger-border:   oklch(86% 0.08 25);
+  --neutral-badge:   oklch(45% 0.01 250);    /* 未激活 / 无数据 */
+  --neutral-bg:      oklch(96% 0.003 250);
+
+  /* 焦点：焦点环为必需项，源实现曾整体缺失 */
+  --focus-ring:      oklch(58% 0.18 255);
+  /* 聚焦光晕保留 alpha，不能用不透明纯色替代 */
+  --accent-glow:     oklch(58% 0.18 255 / 0.16);
+  --danger-glow:     oklch(52% 0.19 25 / 0.16);
+
+  /* ------------------------------------------------------------------------
+     字体栈：系统栈优先，中文回落 PingFang SC / HarmonyOS Sans SC / MiSans。
+     显示字体与正文字体分别指向 SF Pro Display / SF Pro Text。
+     Inter / Roboto / Arial 不作为显示字体使用。
+     ------------------------------------------------------------------------ */
+  --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display",
+                  "PingFang SC", "HarmonyOS Sans SC", "MiSans",
+                  "Microsoft YaHei UI", system-ui, sans-serif;
+  --font-body:    -apple-system, BlinkMacSystemFont, "SF Pro Text",
+                  "PingFang SC", "HarmonyOS Sans SC", "MiSans",
+                  "Microsoft YaHei UI", system-ui, sans-serif;
+  --font-mono:    ui-monospace, SFMono-Regular, "SF Mono",
+                  "JetBrains Mono", Consolas, "Liberation Mono", monospace;
+
+  /* 排版阶梯：字号 / 行高 成对定义，字重只允许 400 / 500 / 600 */
+  --text-display:     600 28px/34px var(--font-display);
+  --text-h1:          600 20px/28px var(--font-display);
+  --text-h2:          600 16px/24px var(--font-display);
+  --text-metric:      600 30px/34px var(--font-display);
+  --text-body:        400 14px/22px var(--font-body);
+  --text-body-strong: 500 14px/22px var(--font-body);
+  --text-label:       500 13px/18px var(--font-body);
+  --text-caption:     400 12px/18px var(--font-body);
+  --text-table-head:  500 12px/16px var(--font-body);
+  --text-mono-sm:     400 13px/20px var(--font-mono);
+  --text-code:        500 16px/20px var(--font-mono);
+
+  --tracking-display: -0.02em;
+  --tracking-h1:      -0.015em;
+  --tracking-h2:      -0.01em;
+  --tracking-caps:     0.02em;  /* 仅拉丁字母表头，中文不加字距 */
+}
+
+/* --------------------------------------------------------------------------
+   2. Dark：只覆盖语义层，组件层无需感知
+   -------------------------------------------------------------------------- */
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg:              oklch(16% 0.008 255);
+  --surface:         oklch(19.5% 0.009 255);
+  --surface-sunken:  oklch(17.5% 0.008 255);
+  --surface-hover:   oklch(23% 0.010 255);
+  --fg:              oklch(96% 0.004 250);
+  --fg-secondary:    oklch(80% 0.008 250);
+  --muted:           oklch(65% 0.010 250);
+  --border:          oklch(28% 0.010 255);
+  --border-strong:   oklch(36% 0.012 255);
+
+  --accent:          oklch(62% 0.17 255);
+  --accent-fg:       oklch(16% 0.01 255);
+  --accent-hover:    oklch(68% 0.16 255);
+  --accent-text:     oklch(76% 0.13 255);
+  --accent-subtle:   oklch(26% 0.05 255);
+  --accent-border:   oklch(40% 0.10 255);
+
+  --success:         oklch(76% 0.15 158);
+  --success-bg:      oklch(26% 0.05 158);
+  --success-border:  oklch(38% 0.08 158);
+  --warning:         oklch(80% 0.14 82);
+  --warning-bg:      oklch(28% 0.06 82);
+  --warning-border:  oklch(40% 0.09 82);
+  --danger:          oklch(72% 0.16 25);
+  --danger-bg:       oklch(28% 0.07 25);
+  --danger-border:   oklch(42% 0.11 25);
+  --neutral-badge:   oklch(72% 0.008 250);
+  --neutral-bg:      oklch(25% 0.008 250);
+
+  --focus-ring:      oklch(70% 0.15 255);
+  --accent-glow:     oklch(62% 0.17 255 / 0.22);
+  --danger-glow:     oklch(72% 0.16 25 / 0.22);
+}
+
+/* --------------------------------------------------------------------------
+   3. 排版基线
+   不对中文施加 text-transform: uppercase 或全局 letter-spacing。
+   -------------------------------------------------------------------------- */
+body {
+  margin: 0;
+  font: var(--text-body);
+  color: var(--fg);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1 { margin: 0; font: var(--text-h1); letter-spacing: var(--tracking-h1); }
+h2 { margin: 0; font: var(--text-h2); letter-spacing: var(--tracking-h2); }
+h3 { margin: 0; font: var(--text-label); color: var(--fg-secondary); }
+
+.text-display { font: var(--text-display); letter-spacing: var(--tracking-display); }
+.text-metric  { font: var(--text-metric);  letter-spacing: var(--tracking-display);
+                font-variant-numeric: tabular-nums; }
+.text-body-strong { font: var(--text-body-strong); }
+.text-label   { font: var(--text-label);   color: var(--fg-secondary); }
+.text-caption { font: var(--text-caption); color: var(--muted); }
+
+/* 邮箱地址 / API Token / 时间戳 / 日志：等宽 + 表格数字 */
+.mono {
+  font: var(--text-mono-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 验证码数值：本产品的核心读取对象，用强调文字色而非填充色 */
+.code-value {
+  font: var(--text-code);
+  letter-spacing: var(--tracking-caps);
+  color: var(--accent-text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 所有数字容器对齐 */
+.num, td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* --------------------------------------------------------------------------
+   6. sRGB 回退层（仅供不支持 oklch() 的旧引擎使用）
+
+   上面的 oklch 令牌是唯一权威定义。本节的十六进制值是由那些 oklch 值机械
+   换算得到的 sRGB 近似，不是新调的颜色，也不允许单独修改：改色必须先改
+   oklch 定义，再重新换算这一节。
+
+   写业务代码时永远引用变量（var(--accent)），不要直接抄下面的十六进制值 —
+   DESIGN.md §3 与 SKILL.md「硬性规则 / 颜色」都禁止在组件里写字面色值。
+   -------------------------------------------------------------------------- */
+@supports not (color: oklch(50% 0.1 250)) {
+  :root {
+    /* 中性层 */
+    --bg:              #fbfcfd;
+    --surface:         #ffffff;
+    --surface-sunken:  #f5f7f9;
+    --surface-hover:   #f3f5f8;
+    --fg:              #0e1217;
+    --fg-secondary:    #3e4349;
+    --muted:           #6a6f76;
+    --border:          #e2e5e8;
+    --border-strong:   #ced1d5;
+
+    /* 强调色 */
+    --accent:          #1779e1;
+    --accent-fg:       #ffffff;
+    --accent-hover:    #0066cd;
+    --accent-text:     #0058c4;
+    --accent-subtle:   #e9f3ff;
+    --accent-border:   #a1c7f8;
+
+    /* 状态色 */
+    --success:         #00723b;
+    --success-bg:      #e5faeb;
+    --success-border:  #aadcba;
+    --warning:         #905d00;
+    --warning-bg:      #fff2d6;
+    --warning-border:  #eac992;
+    --danger:          #be222a;
+    --danger-bg:       #ffece9;
+    --danger-border:   #ffbdb7;
+    --neutral-badge:   #51565b;
+    --neutral-bg:      #f0f2f4;
+
+    /* 焦点与浮层光晕：alpha 与 oklch 定义保持一致 */
+    --focus-ring:      #1779e1;
+    --accent-glow:     rgba(23, 121, 225, 0.16);
+    --danger-glow:     rgba(190, 34, 42, 0.16);
+  }
+
+  [data-theme="dark"] {
+    --bg:              #0b0d11;
+    --surface:         #121519;
+    --surface-sunken:  #0e1114;
+    --surface-hover:   #1a1d22;
+    --fg:              #f0f2f4;
+    --fg-secondary:    #babec3;
+    --muted:           #8b9095;
+    --border:          #26292e;
+    --border-strong:   #393e43;
+
+    --accent:          #3186e9;
+    --accent-fg:       #0a0e12;
+    --accent-hover:    #4c99f8;
+    --accent-text:     #76b4ff;
+    --accent-subtle:   #12253c;
+    --accent-border:   #1d487c;
+
+    --success:         #48cd8c;
+    --success-bg:      #0a2b1a;
+    --success-border:  #104f32;
+    --warning:         #eab444;
+    --warning-bg:      #372500;
+    --warning-border:  #604200;
+    --danger:          #f97770;
+    --danger-bg:       #451816;
+    --danger-border:   #7e302d;
+    --neutral-badge:   #a1a5a9;
+    --neutral-bg:      #1f2225;
+
+    --focus-ring:      #59a0f9;
+    --accent-glow:     rgba(49, 134, 233, 0.22);
+    --danger-glow:     rgba(249, 119, 112, 0.22);
+  }
+}

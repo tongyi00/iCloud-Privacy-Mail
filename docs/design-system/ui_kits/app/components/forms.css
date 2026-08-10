@@ -1,0 +1,106 @@
+/* ==========================================================================
+   iCloud Privacy Mail — 表单与反馈 / Field + Input + Switch + Alert + Tabs
+   依赖：../../../colors_and_type.css + ../../../tokens.css（必须先引入）
+   来源证据：examples/templates/{workbench-index,account-manage,login}.html
+   本文件由 ui_kits/app/components.css 聚合引入，也可单独引用。
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   Form
+   -------------------------------------------------------------------------- */
+.field { display: grid; gap: var(--gap-label); }
+.field-label { font: var(--text-label); color: var(--fg-secondary); }
+.field-label .required { color: var(--danger); margin-left: 2px; }
+
+.input, .select, .textarea {
+  width: 100%;
+  min-height: var(--control-h);
+  padding: 0 var(--space-3);
+  font: var(--text-body);
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+}
+.textarea { padding: var(--space-2) var(--space-3); min-height: 80px; resize: vertical; }
+.input::placeholder, .textarea::placeholder { color: var(--muted); }
+.input:hover, .select:hover, .textarea:hover { border-color: var(--muted); }
+.input:focus-visible, .select:focus-visible, .textarea:focus-visible {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+  outline: none;
+}
+.input:disabled { background: var(--surface-sunken); color: var(--muted); cursor: not-allowed; }
+.input[aria-invalid="true"] { border-color: var(--danger); }
+.input[aria-invalid="true"]:focus-visible { box-shadow: 0 0 0 3px var(--danger-glow); }
+
+/* 字段级错误：预留行高，出现时不引起布局跳动 */
+.field-error { margin: 0; min-height: 18px; font: var(--text-caption); color: var(--danger); }
+.field-hint  { margin: 0; font: var(--text-caption); color: var(--muted); }
+
+.field-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--gap-field); }
+.field-grid .full { grid-column: 1 / -1; }
+.form-actions {
+  display: flex;
+  gap: var(--gap-btn);
+  margin-top: var(--space-6);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border);
+}
+.input-num { width: 88px; text-align: right; font-variant-numeric: tabular-nums; }
+
+/* Switch 36×20 */
+.switch { position: relative; display: inline-flex; align-items: center; gap: var(--space-2); cursor: pointer; }
+.switch input { position: absolute; opacity: 0; width: 36px; height: 20px; margin: 0; cursor: pointer; }
+.switch .track {
+  width: 36px; height: 20px; flex: none;
+  border-radius: var(--radius-full);
+  background: var(--border-strong);
+  transition: background-color var(--dur) var(--ease);
+}
+.switch .track::after {
+  content: ""; display: block;
+  width: 16px; height: 16px; margin: 2px;
+  border-radius: var(--radius-full);
+  background: var(--surface);
+  transition: margin-left var(--dur) var(--ease);
+}
+.switch input:checked + .track { background: var(--accent); }
+.switch input:checked + .track::after { margin-left: 18px; }
+.switch input:focus-visible + .track { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+
+/* Alert：四种语义，无左侧彩色竖条式样 */
+.alert {
+  display: flex;
+  gap: 10px;
+  padding: var(--space-3) 14px;
+  border: 1px solid;
+  border-radius: var(--radius-md);
+  font: 400 13px/1.6 var(--font-body);
+}
+.alert-title { font-weight: 500; }
+.alert.info    { color: var(--accent-text); background: var(--accent-subtle);  border-color: var(--accent-border); }
+.alert.success { color: var(--success);     background: var(--success-bg);     border-color: var(--success-border); }
+.alert.warning { color: var(--warning);     background: var(--warning-bg);     border-color: var(--warning-border); }
+.alert.danger  { color: var(--danger);      background: var(--danger-bg);      border-color: var(--danger-border); }
+
+/* 下划线式标签页（登录 / 注册、日志分类） */
+.tabs { display: flex; gap: var(--space-4); border-bottom: 1px solid var(--border); }
+.tab {
+  height: 36px;
+  padding: 0 2px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font: var(--text-body-strong);
+  cursor: pointer;
+  transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+.tab:hover { color: var(--fg); }
+.tab[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--accent); }
+.tab:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+
+/* 双列字段栅格在窄屏转单列 */
+@media (max-width: 680px) { .field-grid { grid-template-columns: minmax(0, 1fr); } }

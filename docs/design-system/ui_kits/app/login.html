@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light" data-density="comfortable">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>登录 — iCloud Privacy Mail 应用套件</title>
+<link rel="stylesheet" href="../../colors_and_type.css">
+<link rel="stylesheet" href="../../tokens.css">
+<link rel="stylesheet" href="components.css">
+<style>
+  /* 登录页：单列居中卡片 400px，页面背景为纯 --bg，无 hero、无渐变 */
+  body { display: grid; place-items: center; min-height: 100vh; padding: var(--space-6); }
+  .auth-card {
+    width: 100%;
+    max-width: 400px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-modal);
+    padding: var(--space-8) var(--space-6);
+    display: grid;
+    gap: var(--space-5);
+  }
+  .auth-head { display: grid; gap: var(--space-1); }
+  .auth-head h1 { font: var(--text-display); letter-spacing: var(--tracking-display); }
+  .auth-fields { display: grid; gap: var(--gap-field); }
+  .btn.block { width: 100%; }
+</style>
+</head>
+<body>
+<main class="auth-card" data-od-id="auth-card">
+  <div class="auth-head">
+    <h1>iCloud Privacy Mail</h1>
+    <p class="text-caption">隐私邮箱创建、同步和取码 API 工作台。</p>
+  </div>
+
+  <div class="tabs" role="tablist" aria-label="登录或注册" data-od-id="auth-tabs">
+    <button class="tab" id="loginTab" role="tab" aria-selected="true" aria-controls="authForm">登录</button>
+    <button class="tab" id="registerTab" role="tab" aria-selected="false" aria-controls="authForm">注册</button>
+  </div>
+
+  <div class="alert info" id="modeHint" data-od-id="mode-hint">
+    <div><span class="alert-title">空系统首次进入。</span>使用一次性启动凭据创建首位管理员，完成后注册入口关闭。</div>
+  </div>
+
+  <form class="auth-fields" id="authForm" novalidate>
+    <div class="field">
+      <label class="field-label" for="username">账号<span class="required">*</span></label>
+      <input class="input" id="username" autocomplete="username" placeholder="例如 admin 或 user@example.com" aria-describedby="usernameError">
+      <p class="field-error" id="usernameError"></p>
+    </div>
+    <div class="field">
+      <label class="field-label" for="password">密码<span class="required">*</span></label>
+      <input class="input" id="password" type="password" autocomplete="current-password" placeholder="至少 6 位" aria-describedby="passwordError">
+      <p class="field-error" id="passwordError"></p>
+    </div>
+    <!-- 页面唯一实心按钮 -->
+    <button class="btn primary lg block" id="submitButton" type="submit" data-od-id="auth-submit">登录</button>
+  </form>
+</main>
+
+<script>
+  // 登录 / 注册切换：下划线标签页，不用胶囊填充按钮
+  const loginTab = document.getElementById('loginTab');
+  const registerTab = document.getElementById('registerTab');
+  const submitButton = document.getElementById('submitButton');
+  const password = document.getElementById('password');
+  let mode = 'login';
+
+  function switchMode(next) {
+    mode = next;
+    const isLogin = next === 'login';
+    loginTab.setAttribute('aria-selected', String(isLogin));
+    registerTab.setAttribute('aria-selected', String(!isLogin));
+    submitButton.textContent = isLogin ? '登录' : '注册';
+    password.setAttribute('autocomplete', isLogin ? 'current-password' : 'new-password');
+  }
+  loginTab.addEventListener('click', () => switchMode('login'));
+  registerTab.addEventListener('click', () => switchMode('register'));
+
+  // 字段级校验：错误落在字段旁，不退化成面板顶部单一提示块
+  document.getElementById('authForm').addEventListener('submit', e => {
+    e.preventDefault();
+    const fields = [
+      { el: document.getElementById('username'), err: document.getElementById('usernameError'),
+        check: v => v.trim() ? '' : '请输入账号' },
+      { el: password, err: document.getElementById('passwordError'),
+        check: v => v.length >= 6 ? '' : '密码至少 6 位' },
+    ];
+    let firstInvalid = null;
+    fields.forEach(f => {
+      const msg = f.check(f.el.value);
+      f.err.textContent = msg;
+      if (msg) {
+        f.el.setAttribute('aria-invalid', 'true');
+        if (!firstInvalid) firstInvalid = f.el;
+      } else {
+        f.el.removeAttribute('aria-invalid');
+      }
+    });
+    if (firstInvalid) { firstInvalid.focus(); return; }
+    // 加载态：文案不变，宽度不跳变
+    submitButton.setAttribute('aria-busy', 'true');
+    submitButton.disabled = true;
+    setTimeout(() => {
+      submitButton.removeAttribute('aria-busy');
+      submitButton.disabled = false;
+      location.href = 'workbench.html';
+    }, 600);
+  });
+</script>
+</body>
+</html>

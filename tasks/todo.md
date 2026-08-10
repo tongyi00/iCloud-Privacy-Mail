@@ -387,7 +387,7 @@
 
 # 前端设计系统重构（refactor/frontend-design-system）
 
-依据：`docs/DESIGN.md`（由 Open Design 产出，已核对诊断准确）
+依据：`docs/design-system/DESIGN.md`（由 Open Design 产出，已核对诊断准确）
 范围：`internal/app/templates/` 下 index.html(3356) / manage.html(884) / login.html(100)
 
 ## 前置约束（已勘查确认）

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 前端重构守护脚本：校验 DOM 契约完整性 + docs/DESIGN.md 的静态验收标准
+# 前端重构守护脚本：校验 DOM 契约完整性 + docs/design-system/DESIGN.md 的静态验收标准
 # 用法：bash tasks/check-design.sh
 set -uo pipefail
 
