@@ -77,3 +77,13 @@
 - 失败模式：删掉 4 张 quick-card 与顶栏三个 dock 容器后，`.quick-grid`/`.quick-card`/`.account-dock`/`.appearance-controls`/`.version-dock`/`.theme-select` 的规则仍留在样式表，其中响应式断点里还在给已不存在的元素设宽度。
 - 检测信号：用 `grep -nE "quick-card|account-dock|version-dock"` 反查，仍在 3 个媒体查询和 2 处焦点环规则里命中。
 - 预防规则：删除 DOM 结构后立刻反向 grep 其全部类名，确认样式表、媒体查询与焦点环规则一并清理；引用新令牌前先确认令牌真实存在（本次误用 `--shadow-menu`，实际为 `--shadow-dropdown`）。
+
+## 2026-08-10 — 测响应式断点前必须确认页面没被重定向
+
+- 失败模式：用 Playwright 跑 `/`、`/manage` 的六档断点，18 组全部 overflow=0，看起来验收通过；
+  实际上未登录时前端会把这两个路由重定向到 `/login`，三组数据测的都是同一个登录页。
+- 检测信号：`location.pathname` 与请求的 route 不一致；页面探针里 `userMenuTrigger`、`logToggle`
+  等目标元素全部 `false`；`document.body.innerHTML.length` 只有 4597，远小于实际工作台页面。
+- 预防规则：测受登录保护的页面时，先断言 `location.pathname` 等于目标路由，
+  并抽查一个该页面独有的元素存在，再采集样式或布局数据。
+  需要干净登录态时用独立 `-config` / `-data` 临时目录起实例，别动开发数据。

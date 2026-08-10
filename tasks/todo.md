@@ -480,3 +480,25 @@
 - 结构核查：三份模板花括号配平；16 个新增类名均同时存在 CSS 规则与标记使用；
   已删除的 `quick-card`/`quick-grid`/`account-dock`/`appearance-controls`/`version-dock`/`theme-select`
   在全文已无残留引用
+
+### 浏览器实测（补齐 DESIGN.md §12 剩余两项验收）
+
+用 Playwright 驱动真实 Chromium 完成，此前只能静态核查的两项现已确认。
+测试实例用独立数据目录，通过 `IPM_BOOTSTRAP_TOKEN` 初始化管理员后登录，避免污染开发数据。
+
+- 断点无横向滚动：`/login` `/` `/manage` × 360/390/768/1024/1440/1920px 共 18 组，
+  `scrollWidth - clientWidth` 全部为 0。
+  注意首轮测试踩坑：未登录时 `/` 与 `/manage` 会被前端重定向到 `/login`，
+  必须先登录，否则测的其实是登录页。
+- 键盘可达性：Tab 遍历出 11 个停靠点，可见元素无焦点环者 0 个，
+  无停靠点落入 `[hidden]` 容器（即收起的菜单和日志面板不会截留焦点）。
+- 用户菜单：打开 `aria-expanded=true` / `hidden=false`，
+  Esc 后回到 `false` / `true` 且焦点归还触发器。
+- 顶栏可见交互元素实测为 2 个（刷新状态、userMenuTrigger），与设计目标一致。
+- 日志面板：默认收起，点击展开并写入 `ipm_log_open=1`，刷新后保持展开。
+- 主题令牌随 `data-theme` 切换：`--bg` light `oklch(99% 0.002 240)` → dark `oklch(16% 0.008 255)`。
+- 表格响应式：390px 下 `thead` 为 `display:none`，行变 `grid`，
+  `td::before` 实际渲染出字段名（取到 `"ID"`），确认卡片列表生效且 JS 无需改动。
+- 粘性表头：1440px 下 `.table-wrap` `max-height` 计算为 580px、`overflow-y:auto`，
+  `th` 为 `position:sticky; top:0`，高度约束到位所以不会静默失效。
+- 控制台错误 0 条。
