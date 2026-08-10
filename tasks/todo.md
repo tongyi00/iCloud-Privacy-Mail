@@ -413,7 +413,7 @@
       修粘性表头（容器缺高度约束致失效）；行悬浮改中性色；数字列 tabular-nums 右对齐；
       长文本改省略号+title；≤820px 转卡片列表；补空态与骨架屏；
       表单标签 13px/500、必填星号、aria-invalid、.field-error
-- [ ] 阶段4 信息架构（清单 10-11）**需用户确认交互变更**
+- [x] 阶段4 信息架构（清单 10-11）**已获用户确认执行**
       顶栏 9 元素 → 「刷新状态」+ 用户下拉；登录态 6 按钮 → 两张分组卡；
       「一键删除码」隔离危险区 + 二次确认；删 4 张 quick-card；日志面板改可折叠
 
@@ -458,3 +458,25 @@
 - `rtk go build ./...`：Success
 - `rtk go test ./internal/... -short -count=1`：232 passed
 - 起服务实测 8801 端口：`/` `/login` `/manage` 均 200；三份模板 CSS 花括号配平；var() 引用无未定义令牌
+
+### 阶段4 信息架构
+- 顶栏：可见交互元素从 9 个降到 2 个（`刷新状态` + 用户菜单触发器），
+  主题/密度/运行配置/账号数据/版本与更新/退出登录全部收进 `#userMenuPanel` 折叠面板。
+  菜单支持点击外部关闭、Esc 关闭并回焦触发器，`aria-expanded` 与 `hidden` 同步。
+- 登录态视图：原 6 按钮平铺工具栏拆成新接口/旧接口两张 `.login-group` 卡，
+  每张卡只有一个 primary（对应「登录」），提交验证码归到各自接口下；
+  保存配置与检测登录态移到共用次级工具栏。
+- 危险操作：`一键删除码` 从运行配置工具栏移入独立 `.danger-zone`，
+  补第二道确认（需手动输入「删除」，不匹配则取消并记日志）。
+- 概览：删掉 4 张 quick-card（其中 3 张与侧栏导航重复），同时清理其全部死 CSS。
+- 日志面板：改为可折叠，默认收起，展开状态存 `ipm_log_open`；
+  标题行整行可点击作开关，箭头随 `aria-expanded` 旋转；原面板内重复的「刷新状态」按钮删除。
+
+### 阶段4 验证情况
+- `bash tasks/check-design.sh`：全部检查通过（focus-visible 18 处）
+- `rtk go build ./...`：Success
+- `rtk go test ./internal/... -short -count=1`：232 passed
+- 起服务实测 8803 端口：`/` `/login` `/manage` 均 200
+- 结构核查：三份模板花括号配平；16 个新增类名均同时存在 CSS 规则与标记使用；
+  已删除的 `quick-card`/`quick-grid`/`account-dock`/`appearance-controls`/`version-dock`/`theme-select`
+  在全文已无残留引用
