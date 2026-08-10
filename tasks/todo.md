@@ -384,3 +384,44 @@
 
 - 当前 `CGO_ENABLED=0` 且未安装 gcc，未运行 `go test -race ./internal/app -count=1`；限流状态始终在既有 mutex 内访问，并由普通回归测试覆盖。
 - 机会式清理只解决过期项永久驻留；一分钟内的高基数来源洪泛仍需由反向代理或边缘网关限流。
+
+# 前端设计系统重构（refactor/frontend-design-system）
+
+依据：`docs/DESIGN.md`（由 Open Design 产出，已核对诊断准确）
+范围：`internal/app/templates/` 下 index.html(3356) / manage.html(884) / login.html(100)
+
+## 前置约束（已勘查确认）
+
+- 模板为**纯静态 HTML**，`{{ }}` 出现 0 次；数据全由 JS 调 API 后 `innerHTML` 渲染
+- `writeTemplate` 仅做 `webFS.ReadFile` + 原样 `Write`，无模板解析 → 改 HTML 不影响 Go 侧
+- JS 的 DOM 契约面（**重构中必须逐一保持**）：
+  - index.html：`$('id')` 封装引用 56 个唯一 id；页面 `id=` 属性 70 个；`innerHTML` 渲染点 10 处
+  - `querySelectorAll` 依赖的选择器：`.mailbox-message-html`、`.manage-refresh-clock`、
+    `.nav-item[data-view]`、`.view-section[data-view]`、`[data-density-option]`、`[data-log-category]`
+  - manage.html：`.nav button[data-view]`、`.view-section[data-view]`、`.account-card`
+  - `classList` 操作 14 处（active / hidden 等状态类不得改名）
+
+## 分阶段任务
+
+- [ ] 阶段1 令牌层与主题（DESIGN.md 清单 1-2）
+      10 套主题 → light/dark；`--green*` → `--accent*`；清 manage.html 硬编码色值；保留 data-density
+- [ ] 阶段2 去装饰与归一（清单 3-7）
+      移除 27 处 gradient、8 处 backdrop-filter、假高光、.card::before 彩条、大阴影；
+      41 处 font-weight 700-950 → 400/500/600；删 5 组入场动画与 10 处 translateY；
+      圆角 → {4,6,8,999}；补全 focus-visible（当前 0 覆盖）
+- [ ] 阶段3 表格与表单（清单 8-9）
+      修粘性表头（容器缺高度约束致失效）；行悬浮改中性色；数字列 tabular-nums 右对齐；
+      长文本改省略号+title；≤820px 转卡片列表；补空态与骨架屏；
+      表单标签 13px/500、必填星号、aria-invalid、.field-error
+- [ ] 阶段4 信息架构（清单 10-11）**需用户确认交互变更**
+      顶栏 9 元素 → 「刷新状态」+ 用户下拉；登录态 6 按钮 → 两张分组卡；
+      「一键删除码」隔离危险区 + 二次确认；删 4 张 quick-card；日志面板改可折叠
+
+## 验收标准（每阶段后校验）
+
+- `rtk go build ./...` 通过；`rtk go test ./internal/... -short` 保持 232 passed
+- 静态校验：gradient=0、backdrop-filter≤1(顶栏)、font-weight>600 计数=0、
+  圆角取值 ⊆ {4,6,8,999}px、translateY 悬浮=0
+- DOM 契约校验：56 个 `$('id')` 引用全部命中页面实存 id；6 个 querySelectorAll 选择器仍有匹配
+- 键盘可达：登录 → 保存登录态 → 创建邮箱 → 邮箱池取码复制，全程焦点可见
+- 断点 360/390/768/1024/1440/1920px 无横向滚动

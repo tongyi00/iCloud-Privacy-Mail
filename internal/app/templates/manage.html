@@ -5,30 +5,130 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>账号数据管理 - iCloud Privacy Mail</title>
   <style>
+    /* ===== 设计令牌层：与 index.html 保持一致，依据 docs/DESIGN.md 第 3 节 ===== */
     :root {
-      --bg: #eef8f6;
-      --panel: rgba(255,255,255,.94);
-      --panel-soft: rgba(248,251,255,.78);
-      --line: rgba(118,143,174,.22);
-      --line-strong: rgba(132,156,188,.34);
-      --text: #061637;
-      --muted: #4e6483;
-      --faint: #8290a8;
-      --green: #13b8a6;
-      --green-dark: #059b87;
-      --red: #dc2626;
-      --shadow: 0 28px 90px rgba(17,70,101,.12);
+      color-scheme: light;
+
+      --bg:             oklch(99% 0.002 240);
+      --surface:        oklch(100% 0 0);
+      --surface-sunken: oklch(97.5% 0.003 250);
+      --surface-hover:  oklch(97% 0.004 250);
+      --fg:             oklch(18% 0.012 250);
+      --fg-secondary:   oklch(38% 0.012 250);
+      --muted:          oklch(54% 0.012 250);
+      --border:         oklch(92% 0.005 250);
+      --border-strong:  oklch(86% 0.006 250);
+
+      --accent:         oklch(58% 0.18 255);
+      --accent-fg:      oklch(100% 0 0);
+      --accent-hover:   oklch(52% 0.18 255);
+      --accent-text:    oklch(48% 0.19 255);
+      --accent-subtle:  oklch(96% 0.02 255);
+      --accent-border:  oklch(82% 0.08 255);
+
+      --success:        oklch(48% 0.13 155);
+      --success-bg:     oklch(96.5% 0.03 155);
+      --success-border: oklch(85% 0.07 155);
+      --warning:        oklch(52% 0.12 75);
+      --warning-bg:     oklch(96.5% 0.04 85);
+      --warning-border: oklch(85% 0.08 80);
+      --danger:         oklch(52% 0.19 25);
+      --danger-bg:      oklch(96.5% 0.03 25);
+      --danger-border:  oklch(86% 0.08 25);
+      --neutral-badge:  oklch(45% 0.01 250);
+      --neutral-bg:     oklch(96% 0.003 250);
+
+      --focus-ring:     oklch(58% 0.18 255);
+      --accent-glow:    oklch(58% 0.18 255 / 0.16);
+      --danger-glow:    oklch(52% 0.19 25 / 0.16);
+
+      --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display",
+                      "PingFang SC", "HarmonyOS Sans SC", "MiSans",
+                      "Microsoft YaHei UI", system-ui, sans-serif;
+      --font-body:    -apple-system, BlinkMacSystemFont, "SF Pro Text",
+                      "PingFang SC", "HarmonyOS Sans SC", "MiSans",
+                      "Microsoft YaHei UI", system-ui, sans-serif;
+      --font-mono:    ui-monospace, SFMono-Regular, "SF Mono",
+                      "JetBrains Mono", Consolas, "Liberation Mono", monospace;
+
+      --space-1: 4px;   --space-2: 8px;   --space-3: 12px;  --space-4: 16px;
+      --space-5: 20px;  --space-6: 24px;  --space-8: 32px;  --space-10: 40px;
+      --space-12: 48px; --space-16: 64px;
+
+      --radius-sm: 4px; --radius-md: 6px; --radius-lg: 8px; --radius-full: 999px;
+
+      --shadow-dropdown: 0 4px 12px oklch(20% 0.02 250 / 0.08),
+                         0 1px 2px  oklch(20% 0.02 250 / 0.06);
+      --shadow-modal:    0 16px 40px oklch(20% 0.02 250 / 0.14),
+                         0 2px 6px   oklch(20% 0.02 250 / 0.08);
+      --shadow-sticky:   0 1px 0 var(--border);
+
+      --dur-fast: 100ms;
+      --dur:      140ms;
+      --ease:     cubic-bezier(0.2, 0, 0.2, 1);
     }
+
+    [data-theme="dark"] {
+      color-scheme: dark;
+
+      --bg:             oklch(16% 0.008 255);
+      --surface:        oklch(19.5% 0.009 255);
+      --surface-sunken: oklch(17.5% 0.008 255);
+      --surface-hover:  oklch(23% 0.010 255);
+      --fg:             oklch(96% 0.004 250);
+      --fg-secondary:   oklch(80% 0.008 250);
+      --muted:          oklch(65% 0.010 250);
+      --border:         oklch(28% 0.010 255);
+      --border-strong:  oklch(36% 0.012 255);
+
+      --accent:         oklch(62% 0.17 255);
+      --accent-fg:      oklch(16% 0.01 255);
+      --accent-hover:   oklch(68% 0.16 255);
+      --accent-text:    oklch(76% 0.13 255);
+      --accent-subtle:  oklch(26% 0.05 255);
+      --accent-border:  oklch(40% 0.10 255);
+
+      --success:        oklch(76% 0.15 158);
+      --success-bg:     oklch(26% 0.05 158);
+      --success-border: oklch(38% 0.08 158);
+      --warning:        oklch(80% 0.14 82);
+      --warning-bg:     oklch(28% 0.06 82);
+      --warning-border: oklch(40% 0.09 82);
+      --danger:         oklch(72% 0.16 25);
+      --danger-bg:      oklch(28% 0.07 25);
+      --danger-border:  oklch(42% 0.11 25);
+      --neutral-badge:  oklch(72% 0.008 250);
+      --neutral-bg:     oklch(25% 0.008 250);
+
+      --focus-ring:     oklch(70% 0.15 255);
+      --accent-glow:    oklch(70% 0.15 255 / 0.22);
+      --danger-glow:    oklch(72% 0.16 25 / 0.22);
+
+      --shadow-dropdown: 0 4px 12px oklch(0% 0 0 / 0.4);
+      --shadow-modal:    0 16px 40px oklch(0% 0 0 / 0.5);
+    }
+
+    /* ===== 兼容别名层：历史变量名映射到语义令牌 ===== */
+    :root {
+      --panel: var(--surface);
+      --panel-soft: var(--surface-sunken);
+      --line: var(--border);
+      --line-strong: var(--border-strong);
+      --text: var(--fg);
+      --faint: var(--muted);
+      --green: var(--accent);
+      --green-dark: var(--accent-text);
+      --red: var(--danger);
+      --shadow: none;
+    }
+
     * { box-sizing: border-box; }
     body {
       margin: 0;
       min-height: 100vh;
-      color: var(--text);
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background:
-        radial-gradient(circle at 0 12%, rgba(19,184,166,.18), transparent 30%),
-        radial-gradient(circle at 95% 0, rgba(56,189,248,.13), transparent 28%),
-        linear-gradient(180deg, #f8fbff 0%, #eef8f6 50%, #f7fbfa 100%);
+      color: var(--fg);
+      font-family: var(--font-body);
+      background: var(--bg);
     }
     button, select, input { font: inherit; }
     .shell { display: grid; grid-template-columns: 238px minmax(0, 1fr); min-height: 100vh; }
@@ -37,9 +137,8 @@
       top: 0;
       height: 100vh;
       padding: 18px 16px;
-      border-right: 1px solid var(--line);
-      background: rgba(255,255,255,.86);
-      backdrop-filter: blur(18px);
+      border-right: 1px solid var(--border);
+      background: var(--surface);
     }
     .brand {
       display: flex;
@@ -48,18 +147,17 @@
       padding: 10px 8px 18px;
       border-bottom: 1px solid var(--line);
       margin-bottom: 12px;
-      font-weight: 900;
-      letter-spacing: -.02em;
+      font-weight: 600;
+     
     }
     .brand-mark {
       width: 34px;
       height: 34px;
       display: grid;
       place-items: center;
-      border-radius: 12px;
-      color: #fff;
-      background: linear-gradient(135deg, #13b8a6, #17c9ae);
-      box-shadow: 0 12px 24px rgba(19,184,166,.2);
+      border-radius: var(--radius-md);
+      color: var(--accent-fg);
+      background: var(--accent);
     }
     .nav { display: grid; gap: 6px; padding: 4px 0 14px; border-bottom: 1px solid var(--line); margin-bottom: 14px; }
     .nav button {
@@ -68,16 +166,17 @@
       align-items: center;
       gap: 10px;
       border: 0;
-      border-radius: 12px;
+      border-radius: var(--radius-md);
       padding: 11px 12px;
       text-align: left;
       color: var(--muted);
       background: transparent;
       cursor: pointer;
-      font-weight: 800;
+      font-weight: 500;
     }
-    .nav button:hover { background: #f3fffb; color: var(--green-dark); }
-    .nav button.active { background: linear-gradient(135deg, #13b8a6, #17c9ae); color: #fff; }
+    .nav button:hover { background: var(--surface-hover); color: var(--fg); }
+    .nav button.active { background: var(--accent-subtle); color: var(--accent-text); box-shadow: inset 2px 0 0 var(--accent); }
+    .nav button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
     .nav-icon { width: 20px; text-align: center; opacity: .86; }
     .side-note {
       padding: 12px;
@@ -87,9 +186,8 @@
     }
     .content { min-width: 0; }
     header {
-      border-bottom: 1px solid var(--line);
-      background: rgba(248,253,252,.76);
-      backdrop-filter: blur(18px);
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
     }
     .topbar, main {
       width: min(1480px, 100%);
@@ -109,43 +207,47 @@
     .eyebrow {
       color: var(--green-dark);
       font-size: 12px;
-      font-weight: 900;
+      font-weight: 600;
       letter-spacing: .16em;
       text-transform: uppercase;
       margin-bottom: 6px;
     }
-    h1 { margin: 0; font-size: 31px; line-height: 1.15; letter-spacing: -.04em; }
-    h2 { margin: 0; font-size: 18px; letter-spacing: -.02em; }
+    h1 { margin: 0; font-size: 31px; line-height: 1.15; }
+    h2 { margin: 0; font-size: 18px; }
     .subtitle { margin-top: 8px; color: var(--muted); line-height: 1.6; }
     .actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; }
-    .actions select.export-format { width: auto; min-width: 94px; border: 1px solid var(--line-strong); border-radius: 12px; background: rgba(255,255,255,.9); color: var(--text); padding: 10px 12px; font-weight: 850; }
-    .actions select.export-account { width: auto; min-width: 190px; max-width: 260px; border: 1px solid var(--line-strong); border-radius: 12px; background: rgba(255,255,255,.9); color: var(--text); padding: 10px 12px; font-weight: 850; }
+    .actions select.export-format { width: auto; min-width: 94px; border: 1px solid var(--line-strong); border-radius: var(--radius-md); background: var(--surface); color: var(--fg); padding: 0 12px; min-height: 32px; font-weight: 500; }
+    .actions select.export-account { width: auto; min-width: 190px; max-width: 260px; border: 1px solid var(--border-strong); border-radius: var(--radius-md); background: var(--surface); color: var(--fg); padding: 0 12px; min-height: 32px; font-weight: 500; }
     .btn {
-      border: 1px solid var(--line-strong);
-      border-radius: 12px;
-      background: rgba(255,255,255,.9);
-      color: var(--text);
-      padding: 10px 14px;
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-md);
+      background: var(--surface);
+      color: var(--fg);
+      padding: 0 12px;
+      min-height: 32px;
       cursor: pointer;
-      font-weight: 850;
+      font-weight: 500;
       white-space: nowrap;
-      transition: transform .12s ease, border-color .12s ease, background .12s ease;
+      transition: background-color var(--dur) var(--ease), border-color var(--dur) var(--ease), color var(--dur) var(--ease);
     }
-    .btn:hover { transform: translateY(-1px); border-color: rgba(19,184,166,.5); background: #f3fffb; }
-    .btn.primary { border-color: transparent; color: #fff; background: linear-gradient(135deg, #13b8a6, #17c9ae); box-shadow: 0 12px 26px rgba(19,184,166,.18); }
-    .btn.small { padding: 7px 10px; border-radius: 9px; font-size: 12px; }
-    .btn.danger { color: var(--red); border-color: rgba(220,38,38,.3); background: #fff7f7; }
-    .btn.danger:hover { border-color: rgba(220,38,38,.55); background: #fff1f1; }
+    /* 次级按钮悬浮保持中性，不得染成品牌色 */
+    .btn:hover { border-color: var(--muted); background: var(--surface-hover); }
+    .btn:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+    .btn:disabled { background: var(--surface-sunken); color: var(--muted); border-color: var(--border); cursor: not-allowed; }
+    .btn.primary { border-color: transparent; color: var(--accent-fg); background: var(--accent); }
+    .btn.primary:hover { background: var(--accent-hover); }
+    .btn.small { padding: 0 10px; min-height: 28px; border-radius: var(--radius-md); font-size: 13px; }
+    .btn.danger { color: var(--danger); border-color: var(--danger-border); background: var(--surface); }
+    .btn.danger:hover { background: var(--danger-bg); border-color: var(--danger); }
     main { padding-top: 22px; padding-bottom: 34px; }
     .view-section { display: none; }
     .view-section.active { display: block; }
     .stats { display: grid; grid-template-columns: repeat(4, minmax(160px, 1fr)); gap: 14px; margin-bottom: 18px; }
     .stats.view-section.active { display: grid; }
     .stat-card, .panel {
-      border: 1px solid var(--line);
-      border-radius: 20px;
-      background: var(--panel);
-      box-shadow: var(--shadow);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      background: var(--surface);
       overflow: hidden;
     }
     .stat-card {
@@ -155,7 +257,7 @@
       flex-direction: column;
       justify-content: center;
     }
-    .stat-card strong { display: block; font-size: 36px; line-height: 1; letter-spacing: -.04em; margin-bottom: 12px; }
+    .stat-card strong { display: block; font-size: 36px; line-height: 1; margin-bottom: 12px; }
     .stat-card span { color: var(--muted); font-size: 13px; }
     .panel { margin-bottom: 18px; }
     .account-grid {
@@ -165,20 +267,21 @@
       padding: 16px 18px 18px;
     }
     .account-card {
-      border: 1px solid var(--line);
-      border-radius: 16px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
       padding: 14px;
-      background: rgba(248,251,255,.76);
+      background: var(--surface);
       cursor: pointer;
-      transition: transform .12s ease, border-color .12s ease, background .12s ease;
+      transition: background-color var(--dur) var(--ease), border-color var(--dur) var(--ease);
     }
-    .account-card:hover { transform: translateY(-1px); border-color: rgba(19,184,166,.46); background: #f3fffb; }
-    .account-card.active { border-color: rgba(19,184,166,.7); background: rgba(236,253,245,.92); box-shadow: inset 0 0 0 1px rgba(19,184,166,.18); }
+    .account-card:hover { border-color: var(--border-strong); background: var(--surface-hover); }
+    .account-card:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+    .account-card.active { border-color: var(--accent-border); background: var(--accent-subtle); }
     .account-card-head { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; margin-bottom: 12px; }
-    .account-name { font-weight: 950; letter-spacing: -.02em; word-break: break-all; }
+    .account-name { font-weight: 600; word-break: break-all; }
     .account-id { color: var(--faint); font-size: 12px; margin-top: 3px; }
     .mini-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
-    .mini-stat { border: 1px solid rgba(118,143,174,.16); border-radius: 12px; background: rgba(255,255,255,.72); padding: 9px; }
+    .mini-stat { border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-sunken); padding: 9px; }
     .mini-stat strong { display: block; font-size: 18px; line-height: 1; margin-bottom: 5px; }
     .mini-stat span { color: var(--faint); font-size: 11px; }
     .filter-line {
@@ -187,7 +290,7 @@
       gap: 8px;
       color: var(--muted);
       font-size: 13px;
-      font-weight: 800;
+      font-weight: 500;
       padding-top: 4px;
     }
     .panel-head {
@@ -195,9 +298,9 @@
       justify-content: space-between;
       gap: 14px;
       align-items: center;
-      padding: 17px 18px 14px;
-      border-bottom: 1px solid var(--line);
-      background: linear-gradient(180deg, rgba(255,255,255,.92), rgba(246,252,251,.72));
+      padding: var(--space-4) var(--space-6);
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
     }
     .panel-head p { margin: 6px 0 0; color: var(--muted); font-size: 13px; line-height: 1.55; }
     .panel-tools {
@@ -214,60 +317,66 @@
       gap: 8px;
       color: var(--muted);
       font-size: 13px;
-      font-weight: 800;
+      font-weight: 500;
     }
-    .pager .btn { padding: 8px 11px; border-radius: 10px; }
+    .pager .btn { padding: 0 10px; min-height: 28px; border-radius: var(--radius-md); }
     .page-size {
       display: inline-flex;
       align-items: center;
       gap: 7px;
       color: var(--muted);
       font-size: 13px;
-      font-weight: 800;
+      font-weight: 500;
       white-space: nowrap;
     }
     .page-size input {
-      width: 76px;
-      border: 1px solid var(--line-strong);
-      border-radius: 10px;
-      background: rgba(255,255,255,.92);
-      color: var(--text);
-      padding: 8px 10px;
-      font-weight: 850;
+      width: 88px;
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-md);
+      background: var(--surface);
+      color: var(--fg);
+      padding: 0 10px;
+      min-height: 32px;
+      font-weight: 400;
+      font-variant-numeric: tabular-nums;
+      text-align: right;
       outline: none;
     }
-    .page-size input:focus {
-      border-color: rgba(19,184,166,.62);
-      box-shadow: 0 0 0 4px rgba(19,184,166,.12);
+    .page-size input:focus-visible {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-glow);
     }
     .table-wrap { overflow: auto; }
     table { width: 100%; min-width: 900px; border-collapse: collapse; }
-    th, td { border-top: 1px solid rgba(118,143,174,.16); padding: 13px 14px; text-align: left; vertical-align: middle; }
-    th { color: var(--muted); background: #f7fbff; font-size: 12px; font-weight: 900; }
-    tbody tr:hover { background: rgba(19,184,166,.045); }
-    .mono { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
-    .email { color: #0f766e; font-weight: 900; }
+    th, td { border-top: 1px solid var(--border); padding: 12px 16px; text-align: left; vertical-align: middle; }
+    th { color: var(--muted); background: var(--surface-sunken); font-size: 12px; font-weight: 500; }
+    tbody tr:hover { background: var(--surface-hover); }
+    .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+    .email { color: var(--fg); font-family: var(--font-mono); font-size: 13px; font-weight: 400; }
     .muted { color: var(--faint); }
+    /* 状态胶囊：默认为「成功」语义，其余语义见下方修饰类 */
     .pill {
       display: inline-flex;
       align-items: center;
-      border: 1px solid rgba(19,184,166,.22);
-      border-radius: 999px;
-      padding: 4px 9px;
-      color: #047857;
-      background: rgba(209,250,229,.78);
+      gap: 6px;
+      border: 1px solid var(--success-border);
+      border-radius: var(--radius-full);
+      padding: 0 8px;
+      min-height: 22px;
+      color: var(--success);
+      background: var(--success-bg);
       font-size: 12px;
-      font-weight: 900;
+      font-weight: 500;
       white-space: nowrap;
     }
-    .pill.gray { color: #475569; border-color: rgba(100,116,139,.18); background: rgba(241,245,249,.9); }
-    .pill.red { color: #b91c1c; border-color: rgba(220,38,38,.2); background: #fff5f5; }
-    .pill.amber { color: #a16207; border-color: rgba(180,83,9,.2); background: #fffbeb; }
+    .pill.gray { color: var(--neutral-badge); border-color: var(--border); background: var(--neutral-bg); }
+    .pill.red { color: var(--danger); border-color: var(--danger-border); background: var(--danger-bg); }
+    .pill.amber { color: var(--warning); border-color: var(--warning-border); background: var(--warning-bg); }
     .empty {
       padding: 22px 18px;
-      color: var(--faint);
-      border-top: 1px solid rgba(118,143,174,.16);
-      background: rgba(248,251,255,.72);
+      color: var(--muted);
+      border-top: 1px solid var(--border);
+      background: var(--surface-sunken);
     }
     .log {
       margin: 0;
@@ -275,11 +384,11 @@
       max-height: 260px;
       overflow: auto;
       padding: 16px 18px;
-      border-top: 1px solid rgba(118,143,174,.16);
-      background: var(--panel-soft);
-      color: #334155;
+      border-top: 1px solid var(--border);
+      background: var(--surface-sunken);
+      color: var(--fg-secondary);
       white-space: pre-wrap;
-      font: 13px/1.7 ui-monospace, SFMono-Regular, Consolas, monospace;
+      font: 400 13px/1.7 var(--font-mono);
     }
     @media (max-width: 1180px) {
       .shell { grid-template-columns: 1fr; }
@@ -421,7 +530,7 @@
           <div class="panel-head">
             <div><h2>运行日志</h2><p>最近操作。</p></div>
           </div>
-          <div class="actions" style="padding:14px 18px; border-top:1px solid rgba(118,143,174,.16);">
+          <div class="actions" style="padding:14px 18px; border-top:1px solid var(--border);">
             <button class="btn" onclick="copyLog()">复制日志</button>
             <button class="btn danger" onclick="clearLog()">清除日志</button>
           </div>

@@ -5,181 +5,182 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>iCloud Privacy Mail</title>
   <style>
+    /* ===== 设计令牌层：依据 docs/DESIGN.md 第 3 节 =====
+       语义化命名，主题只覆盖语义层，组件层不感知主题。
+       文件末尾的兼容别名把历史变量名（--green/--line/--card 等）映射到本层，
+       供尚未改写的组件规则使用。 */
     :root {
       color-scheme: light;
-      --surface-rgb: 255 255 255;
-      --bg: #f3f7f9;
-      --bg-soft: #f8fbfb;
-      --panel: #ffffff;
-      --panel-2: #f4f8fa;
-      --card: #ffffff;
-      --ink: #101828;
-      --ink-soft: #1f314e;
-      --text: #07182f;
-      --muted: #51677f;
-      --faint: #8492a6;
-      --line: rgba(117, 133, 163, .22);
-      --line-strong: rgba(117, 133, 163, .38);
-      --green: #13b8a6;
-      --green-2: #0a9e8c;
-      --on-accent: #ffffff;
-      --amber: #b7791f;
-      --red: #dc2626;
-      --count-bg: #e7eef5;
-      --th-bg: #f3f9fb;
-      --log-bg: #f4f8fa;
-      --log-ink: #334155;
-      --ok: #047857;
-      --ok-soft: rgba(209, 250, 229, .72);
-      --ok-line: rgba(16, 185, 129, .26);
-      --warn: #a16207;
-      --warn-soft: #fff7e6;
-      --warn-line: rgba(180, 83, 9, .24);
-      --bad: #b91c1c;
-      --bad-soft: #fff1f1;
-      --bad-line: rgba(220, 38, 38, .22);
-      --shadow: 0 14px 36px rgba(16, 24, 40, .06);
-      --shadow-strong: 0 28px 72px rgba(16, 24, 40, .12);
-      --focus-ring: rgba(19, 184, 166, .16);
-      --soft-glass: rgb(var(--surface-rgb) / .68);
-      --glass: rgb(var(--surface-rgb) / .56);
-      --glass-strong: rgb(var(--surface-rgb) / .92);
-      --glass-soft: rgb(var(--surface-rgb) / .5);
-      --glass-hi: rgb(var(--surface-rgb) / .72);
-      --glass-line: rgb(var(--surface-rgb) / .62);
-      --sidebar-bg: rgb(var(--surface-rgb) / .9);
-      --head-bg: rgb(var(--surface-rgb) / .86);
-      --input-bg: rgb(var(--surface-rgb) / .9);
+
+      /* 中性层 */
+      --bg:             oklch(99% 0.002 240);
+      --surface:        oklch(100% 0 0);
+      --surface-sunken: oklch(97.5% 0.003 250);
+      --surface-hover:  oklch(97% 0.004 250);
+      --fg:             oklch(18% 0.012 250);
+      --fg-secondary:   oklch(38% 0.012 250);
+      --muted:          oklch(54% 0.012 250);
+      --border:         oklch(92% 0.005 250);
+      --border-strong:  oklch(86% 0.006 250);
+
+      /* 强调色：全站唯一品牌色 */
+      --accent:         oklch(58% 0.18 255);
+      --accent-fg:      oklch(100% 0 0);
+      --accent-hover:   oklch(52% 0.18 255);
+      --accent-text:    oklch(48% 0.19 255);
+      --accent-subtle:  oklch(96% 0.02 255);
+      --accent-border:  oklch(82% 0.08 255);
+
+      /* 状态色三件套：前景 / 背景 / 边框 */
+      --success:        oklch(48% 0.13 155);
+      --success-bg:     oklch(96.5% 0.03 155);
+      --success-border: oklch(85% 0.07 155);
+      --warning:        oklch(52% 0.12 75);
+      --warning-bg:     oklch(96.5% 0.04 85);
+      --warning-border: oklch(85% 0.08 80);
+      --danger:         oklch(52% 0.19 25);
+      --danger-bg:      oklch(96.5% 0.03 25);
+      --danger-border:  oklch(86% 0.08 25);
+      --neutral-badge:  oklch(45% 0.01 250);
+      --neutral-bg:     oklch(96% 0.003 250);
+
+      --focus-ring:     oklch(58% 0.18 255);
+      /* 焦点环外发光与输入框聚焦光晕（保留 alpha，不可用纯色替代） */
+      --accent-glow:    oklch(58% 0.18 255 / 0.16);
+      --danger-glow:    oklch(52% 0.19 25 / 0.16);
+
+      /* 字体栈 */
+      --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display",
+                      "PingFang SC", "HarmonyOS Sans SC", "MiSans",
+                      "Microsoft YaHei UI", system-ui, sans-serif;
+      --font-body:    -apple-system, BlinkMacSystemFont, "SF Pro Text",
+                      "PingFang SC", "HarmonyOS Sans SC", "MiSans",
+                      "Microsoft YaHei UI", system-ui, sans-serif;
+      --font-mono:    ui-monospace, SFMono-Regular, "SF Mono",
+                      "JetBrains Mono", Consolas, "Liberation Mono", monospace;
+
+      /* 间距：4px 基准栅格 */
+      --space-1: 4px;   --space-2: 8px;   --space-3: 12px;  --space-4: 16px;
+      --space-5: 20px;  --space-6: 24px;  --space-8: 32px;  --space-10: 40px;
+      --space-12: 48px; --space-16: 64px;
+
+      /* 圆角：仅 4 档 */
+      --radius-sm: 4px; --radius-md: 6px; --radius-lg: 8px; --radius-full: 999px;
+
+      /* 阴影：只服务于浮层，页面内元素一律无阴影 */
+      --shadow-dropdown: 0 4px 12px oklch(20% 0.02 250 / 0.08),
+                         0 1px 2px  oklch(20% 0.02 250 / 0.06);
+      --shadow-modal:    0 16px 40px oklch(20% 0.02 250 / 0.14),
+                         0 2px 6px   oklch(20% 0.02 250 / 0.08);
+      --shadow-sticky:   0 1px 0 var(--border);
+
+      /* 动效预算 */
+      --dur-fast: 100ms;
+      --dur:      140ms;
+      --ease:     cubic-bezier(0.2, 0, 0.2, 1);
     }
-    body[data-theme="sky"] {
-      --surface-rgb: 255 255 255;
-      --bg: #eef4fc; --bg-soft: #f6faff; --panel: #ffffff; --card: #ffffff;
-      --text: #0a1b35; --ink: #0f1f3d; --ink-soft: #243b63; --muted: #4f6488; --faint: #7c8fb0;
-      --line: rgba(91, 129, 186, .22); --line-strong: rgba(91, 129, 186, .38);
-      --green: #3b82f6; --green-2: #2563eb; --on-accent: #ffffff;
-      --count-bg: #e4ecfb; --th-bg: #eef4ff; --log-bg: #f1f6fe; --log-ink: #33415a;
-      --ok: #047857; --ok-soft: rgba(209, 250, 229, .72); --ok-line: rgba(16, 185, 129, .26);
-      --warn: #a16207; --warn-soft: #fff7e6; --warn-line: rgba(180, 83, 9, .24);
-      --bad: #b91c1c; --bad-soft: #fff1f1; --bad-line: rgba(220, 38, 38, .22);
-      --shadow: 0 16px 42px rgba(37, 99, 235, .08); --shadow-strong: 0 30px 78px rgba(37, 99, 235, .15);
-      --focus-ring: rgba(37, 99, 235, .16);
-    }
-    body[data-theme="graphite"] {
-      --surface-rgb: 255 255 255;
-      --bg: #f1f2f4; --bg-soft: #f8f9fa; --panel: #ffffff; --card: #ffffff;
-      --text: #14181f; --ink: #1a1f27; --ink-soft: #313a47; --muted: #5b6675; --faint: #8a93a1;
-      --line: rgba(90, 96, 108, .22); --line-strong: rgba(90, 96, 108, .38);
-      --green: #64748b; --green-2: #475569; --on-accent: #ffffff;
-      --count-bg: #e9ebef; --th-bg: #f3f4f6; --log-bg: #f3f4f6; --log-ink: #313a47;
-      --ok: #047857; --ok-soft: rgba(209, 250, 229, .72); --ok-line: rgba(16, 185, 129, .26);
-      --warn: #a16207; --warn-soft: #fff7e6; --warn-line: rgba(180, 83, 9, .24);
-      --bad: #b91c1c; --bad-soft: #fff1f1; --bad-line: rgba(220, 38, 38, .22);
-      --shadow: 0 14px 38px rgba(15, 23, 42, .07); --shadow-strong: 0 28px 70px rgba(15, 23, 42, .14);
-      --focus-ring: rgba(71, 85, 105, .16);
-    }
-    body[data-theme="sunset"] {
-      --surface-rgb: 255 252 249;
-      --bg: #fbf4ee; --bg-soft: #fef9f4; --panel: #fffdfb; --card: #fffdfb;
-      --text: #2a1505; --ink: #2e1a0a; --ink-soft: #4a2f18; --muted: #7c5a3e; --faint: #ac8d72;
-      --line: rgba(180, 120, 70, .20); --line-strong: rgba(180, 120, 70, .36);
-      --green: #fb7338; --green-2: #ea580c; --on-accent: #ffffff;
-      --count-bg: #f7e7d8; --th-bg: #fdf2e8; --log-bg: #fbf3eb; --log-ink: #5a4633;
-      --ok: #047857; --ok-soft: rgba(209, 250, 229, .66); --ok-line: rgba(16, 185, 129, .26);
-      --warn: #b45309; --warn-soft: rgba(255, 237, 213, .78); --warn-line: rgba(180, 83, 9, .26);
-      --bad: #c0341d; --bad-soft: rgba(255, 235, 228, .82); --bad-line: rgba(220, 60, 38, .24);
-      --shadow: 0 14px 36px rgba(120, 60, 20, .08); --shadow-strong: 0 28px 72px rgba(120, 60, 20, .16);
-      --focus-ring: rgba(251, 115, 56, .18);
-    }
-    body[data-theme="violet"] {
-      --surface-rgb: 252 251 255;
-      --bg: #f4f2fb; --bg-soft: #faf8ff; --panel: #ffffff; --card: #fdfcff;
-      --text: #190b33; --ink: #1a1330; --ink-soft: #2c2350; --muted: #5d5478; --faint: #948db0;
-      --line: rgba(124, 108, 160, .22); --line-strong: rgba(124, 108, 160, .38);
-      --green: #7c6cf0; --green-2: #6d28d9; --on-accent: #ffffff;
-      --count-bg: #ece8f8; --th-bg: #f5f2fd; --log-bg: #f6f3fc; --log-ink: #3a3357;
-      --ok: #047857; --ok-soft: rgba(209, 250, 229, .72); --ok-line: rgba(16, 185, 129, .26);
-      --warn: #a16207; --warn-soft: #fff7e6; --warn-line: rgba(180, 83, 9, .24);
-      --bad: #b91c1c; --bad-soft: #fff1f1; --bad-line: rgba(220, 38, 38, .22);
-      --shadow: 0 14px 36px rgba(45, 27, 90, .08); --shadow-strong: 0 28px 72px rgba(45, 27, 90, .16);
-      --focus-ring: rgba(124, 108, 160, .20);
-    }
-    body[data-theme="rose"] {
-      --surface-rgb: 255 251 252;
-      --bg: #faf2f5; --bg-soft: #fef7f9; --panel: #ffffff; --card: #fffafc;
-      --text: #2a0a18; --ink: #2e1020; --ink-soft: #4d1f37; --muted: #7d5060; --faint: #ad8693;
-      --line: rgba(163, 117, 137, .22); --line-strong: rgba(163, 117, 137, .40);
-      --green: #f43f6e; --green-2: #e11d62; --on-accent: #ffffff;
-      --count-bg: #f7e7ee; --th-bg: #fdf3f7; --log-bg: #fbf4f7; --log-ink: #4d3543;
-      --ok: #047857; --ok-soft: rgba(209, 250, 229, .72); --ok-line: rgba(16, 185, 129, .26);
-      --warn: #a16207; --warn-soft: #fff7e6; --warn-line: rgba(180, 83, 9, .24);
-      --bad: #b91c1c; --bad-soft: #fff1f1; --bad-line: rgba(220, 38, 38, .22);
-      --shadow: 0 14px 36px rgba(72, 16, 40, .07); --shadow-strong: 0 28px 72px rgba(72, 16, 40, .14);
-      --focus-ring: rgba(225, 29, 98, .18);
-    }
-    body[data-theme="forest"] {
-      --surface-rgb: 251 254 252;
-      --bg: #eef4f0; --bg-soft: #f4faf6; --panel: #ffffff; --card: #ffffff;
-      --text: #06251a; --ink: #0d2a1f; --ink-soft: #1d4234; --muted: #4a6a5b; --faint: #7f9a8c;
-      --line: rgba(96, 140, 118, .22); --line-strong: rgba(96, 140, 118, .38);
-      --green: #10b981; --green-2: #047857; --on-accent: #ffffff;
-      --count-bg: #e4efe8; --th-bg: #eff8f2; --log-bg: #f1f7f3; --log-ink: #2f4a3d;
-      --ok: #047857; --ok-soft: rgba(209, 250, 229, .72); --ok-line: rgba(16, 185, 129, .26);
-      --warn: #a16207; --warn-soft: #fff7e6; --warn-line: rgba(180, 83, 9, .24);
-      --bad: #b91c1c; --bad-soft: #fff1f1; --bad-line: rgba(220, 38, 38, .22);
-      --shadow: 0 14px 36px rgba(6, 37, 26, .07); --shadow-strong: 0 28px 72px rgba(6, 37, 26, .13);
-      --focus-ring: rgba(16, 185, 129, .16);
-    }
-    body[data-theme="midnight"] {
+
+    [data-theme="dark"] {
       color-scheme: dark;
-      --surface-rgb: 44 56 82;
-      --bg: #0b1220; --bg-soft: #0f1830; --panel: #161f33; --card: #1d2740;
-      --text: #eaf0fb; --ink: #dde6f6; --ink-soft: #c2cfe6; --muted: #94a6c4; --faint: #6b7b99;
-      --line: rgba(148, 176, 224, .18); --line-strong: rgba(148, 176, 224, .34); --glass-line: rgba(186, 210, 248, .14);
-      --green: #38bdf8; --green-2: #0ea5e9; --on-accent: #06223a;
-      --count-bg: #1c2742; --th-bg: #141d31; --log-bg: #0e1729; --log-ink: #aebfd9;
-      --ok: #34d399; --ok-soft: rgba(16, 185, 129, .16); --ok-line: rgba(52, 211, 153, .30);
-      --warn: #fbbf24; --warn-soft: rgba(245, 158, 11, .16); --warn-line: rgba(251, 191, 36, .30);
-      --bad: #f87171; --bad-soft: rgba(239, 68, 68, .16); --bad-line: rgba(248, 113, 113, .30);
-      --shadow: 0 14px 36px rgba(0, 0, 0, .5); --shadow-strong: 0 28px 72px rgba(0, 0, 0, .62);
-      --focus-ring: rgba(56, 189, 248, .32);
+
+      --bg:             oklch(16% 0.008 255);
+      --surface:        oklch(19.5% 0.009 255);
+      --surface-sunken: oklch(17.5% 0.008 255);
+      --surface-hover:  oklch(23% 0.010 255);
+      --fg:             oklch(96% 0.004 250);
+      --fg-secondary:   oklch(80% 0.008 250);
+      --muted:          oklch(65% 0.010 250);
+      --border:         oklch(28% 0.010 255);
+      --border-strong:  oklch(36% 0.012 255);
+
+      --accent:         oklch(62% 0.17 255);
+      --accent-fg:      oklch(16% 0.01 255);
+      --accent-hover:   oklch(68% 0.16 255);
+      --accent-text:    oklch(76% 0.13 255);
+      --accent-subtle:  oklch(26% 0.05 255);
+      --accent-border:  oklch(40% 0.10 255);
+
+      --success:        oklch(76% 0.15 158);
+      --success-bg:     oklch(26% 0.05 158);
+      --success-border: oklch(38% 0.08 158);
+      --warning:        oklch(80% 0.14 82);
+      --warning-bg:     oklch(28% 0.06 82);
+      --warning-border: oklch(40% 0.09 82);
+      --danger:         oklch(72% 0.16 25);
+      --danger-bg:      oklch(28% 0.07 25);
+      --danger-border:  oklch(42% 0.11 25);
+      --neutral-badge:  oklch(72% 0.008 250);
+      --neutral-bg:     oklch(25% 0.008 250);
+
+      --focus-ring:     oklch(70% 0.15 255);
+      --accent-glow:    oklch(70% 0.15 255 / 0.22);
+      --danger-glow:    oklch(72% 0.16 25 / 0.22);
+
+      /* 暗色下浮层靠更强边框而非更黑阴影建立层级 */
+      --shadow-dropdown: 0 4px 12px oklch(0% 0 0 / 0.4);
+      --shadow-modal:    0 16px 40px oklch(0% 0 0 / 0.5);
     }
-    body[data-theme="obsidian"] {
-      color-scheme: dark;
-      --surface-rgb: 48 53 64;
-      --bg: #0c0e12; --bg-soft: #111420; --panel: #16181f; --card: #1c1f27;
-      --text: #f2f4f8; --ink: #e6eaf2; --ink-soft: #c2c9d6; --muted: #8b97a9; --faint: #5d6a7c;
-      --line: rgba(168, 184, 210, .14); --line-strong: rgba(168, 184, 210, .26); --glass-line: rgba(200, 212, 232, .10);
-      --green: #22d3ee; --green-2: #06b6d4; --on-accent: #062a32;
-      --count-bg: #232735; --th-bg: #1a1e28; --log-bg: #0e1117; --log-ink: #aeb8c8;
-      --ok: #34d399; --ok-soft: rgba(16, 185, 129, .14); --ok-line: rgba(52, 211, 153, .30);
-      --warn: #fbbf24; --warn-soft: rgba(245, 158, 11, .14); --warn-line: rgba(251, 191, 36, .30);
-      --bad: #f87171; --bad-soft: rgba(239, 68, 68, .14); --bad-line: rgba(248, 113, 113, .32);
-      --shadow: 0 14px 36px rgba(0, 0, 0, .55); --shadow-strong: 0 28px 72px rgba(0, 0, 0, .68);
-      --focus-ring: rgba(34, 211, 238, .30);
+    /* ===== 兼容别名层 =====
+       把历史变量名映射到语义令牌，使尚未改写的组件规则继续生效。
+       阶段2-4 会逐步消除对这些别名的引用；新增样式一律直接用语义令牌。
+       注意：--surface-rgb 供残留的 rgb(var(--surface-rgb)/x) 写法兜底，
+       浅色为白、深色为面板灰，避免这些写法在暗色下透出白块。 */
+    :root {
+      --surface-rgb: 255 255 255;
+      --panel: var(--surface);
+      --panel-2: var(--surface-sunken);
+      --card: var(--surface);
+      --bg-soft: var(--bg);
+      --text: var(--fg);
+      --ink: var(--fg);
+      --ink-soft: var(--fg-secondary);
+      --faint: var(--muted);
+      --line: var(--border);
+      --line-strong: var(--border-strong);
+      /* 品牌色别名：原 --green 在旧实现里随主题变色，语义已归一到 --accent */
+      --green: var(--accent);
+      --green-2: var(--accent-text);
+      --on-accent: var(--accent-fg);
+      --count-bg: var(--neutral-bg);
+      --th-bg: var(--surface-sunken);
+      --log-bg: var(--surface-sunken);
+      --log-ink: var(--fg-secondary);
+      --ok: var(--success);
+      --ok-soft: var(--success-bg);
+      --ok-line: var(--success-border);
+      --warn: var(--warning);
+      --warn-soft: var(--warning-bg);
+      --warn-line: var(--warning-border);
+      --bad: var(--danger);
+      --bad-soft: var(--danger-bg);
+      --bad-line: var(--danger-border);
+      --amber: var(--warning);
+      --red: var(--danger);
+      /* 页面内元素不再投影，别名置空；浮层改用 --shadow-modal/--shadow-dropdown */
+      --shadow: none;
+      --shadow-strong: none;
+      /* 表面一律实色，玻璃别名全部退化为实色 */
+      --soft-glass: var(--surface);
+      --glass: var(--surface);
+      --glass-strong: var(--surface);
+      --glass-soft: var(--surface);
+      --glass-hi: var(--surface);
+      --glass-line: var(--border);
+      --sidebar-bg: var(--surface);
+      --head-bg: var(--surface);
+      --input-bg: var(--surface);
     }
-    body[data-theme="aurora"] {
-      color-scheme: dark;
-      --surface-rgb: 40 60 64;
-      --bg: #08161a; --bg-soft: #0c1f22; --panel: #102528; --card: #163133;
-      --text: #e8f6f3; --ink: #d3ebe6; --ink-soft: #aecfca; --muted: #84a8a4; --faint: #5f7f7d;
-      --line: rgba(180, 224, 216, .16); --line-strong: rgba(180, 224, 216, .30); --glass-line: rgba(180, 224, 216, .14);
-      --green: #2dd4bf; --green-2: #14b8a6; --on-accent: #04201b;
-      --count-bg: #15302f; --th-bg: #122a2c; --log-bg: #0a1c1e; --log-ink: #9cc4bf;
-      --ok: #34d399; --ok-soft: rgba(16, 185, 129, .16); --ok-line: rgba(52, 211, 153, .30);
-      --warn: #fbbf24; --warn-soft: rgba(180, 120, 9, .16); --warn-line: rgba(251, 191, 36, .28);
-      --bad: #fb7185; --bad-soft: rgba(220, 38, 38, .16); --bad-line: rgba(251, 113, 133, .30);
-      --shadow: 0 14px 36px rgba(0, 0, 0, .42); --shadow-strong: 0 28px 72px rgba(0, 0, 0, .5);
-      --focus-ring: rgba(45, 212, 191, .30);
+    [data-theme="dark"] {
+      --surface-rgb: 40 44 52;
     }
+
     * { box-sizing: border-box; }
     body {
       margin: 0;
       min-height: 100vh;
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background:
-        linear-gradient(135deg, rgb(var(--surface-rgb) / .55) 0, rgb(var(--surface-rgb) / 0) 36%),
-        linear-gradient(180deg, var(--bg-soft) 0, var(--bg) 420px, var(--bg) 100%);
-      color: var(--text);
+      font-family: var(--font-body);
+      background: var(--bg);
+      color: var(--fg);
     }
     button, input, textarea, select { font: inherit; }
     .app-shell {
@@ -1123,20 +1124,8 @@
             <label class="theme-select" aria-label="界面风格">
               <span>主题</span>
               <select id="themeSelect" onchange="setTheme(this.value)">
-                <optgroup label="浅色">
-                  <option value="mint">清透薄荷</option>
-                  <option value="sky">蓝调</option>
-                  <option value="graphite">灰阶</option>
-                  <option value="sunset">暮光暖橘</option>
-                  <option value="violet">紫晶</option>
-                  <option value="rose">绯樱</option>
-                  <option value="forest">森野</option>
-                </optgroup>
-                <optgroup label="深色">
-                  <option value="midnight">暗夜</option>
-                  <option value="obsidian">曜石</option>
-                  <option value="aurora">极光</option>
-                </optgroup>
+                <option value="light">浅色</option>
+                <option value="dark">深色</option>
               </select>
             </label>
             <div class="segmented" role="group" aria-label="显示密度">
@@ -1460,9 +1449,19 @@
       setActiveView(saved);
     }
 
-    const THEME_SLUGS = ['mint', 'sky', 'graphite', 'sunset', 'violet', 'rose', 'forest', 'midnight', 'obsidian', 'aurora'];
+    // 主题按 docs/DESIGN.md 2.3 节收敛为 light / dark 两套
+    const THEME_SLUGS = ['light', 'dark'];
+    // 旧版本 localStorage 里可能残留已废弃的主题名，按明暗归类迁移
+    const LEGACY_THEME_MAP = {
+      mint: 'light', sky: 'light', graphite: 'light', sunset: 'light',
+      violet: 'light', rose: 'light', forest: 'light',
+      midnight: 'dark', obsidian: 'dark', aurora: 'dark'
+    };
     function setTheme(theme) {
-      const normalized = THEME_SLUGS.includes(theme) ? theme : 'mint';
+      const migrated = LEGACY_THEME_MAP[theme] || theme;
+      const normalized = THEME_SLUGS.includes(migrated) ? migrated : 'light';
+      // 令牌定义在 [data-theme]，挂到 documentElement 以覆盖 :root 下的所有规则
+      document.documentElement.dataset.theme = normalized;
       document.body.dataset.theme = normalized;
       const themeSelect = document.getElementById('themeSelect');
       if (themeSelect && themeSelect.value !== normalized) {
@@ -1485,12 +1484,18 @@
     }
 
     function initAppearanceControls() {
-      let savedTheme = 'mint';
+      // 首次访问无存储值时跟随系统明暗偏好
+      let savedTheme = '';
       let savedDensity = 'comfortable';
       try {
-        savedTheme = localStorage.getItem(themeStorageKey) || 'mint';
+        savedTheme = localStorage.getItem(themeStorageKey) || '';
         savedDensity = localStorage.getItem(densityStorageKey) || 'comfortable';
       } catch (_) {}
+      if (!savedTheme) {
+        const prefersDark = window.matchMedia
+          && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        savedTheme = prefersDark ? 'dark' : 'light';
+      }
       setTheme(savedTheme);
       setDensity(savedDensity);
     }
