@@ -164,7 +164,16 @@ func TestMailboxAPIURLUsesConfiguredPublicBaseURLOrRelativePath(t *testing.T) {
 }
 
 func TestLoadConfigRejectsInvalidPublicBaseURL(t *testing.T) {
-	for _, value := range []string{"//missing-scheme.example", "javascript://example.com", "https:///missing-host"} {
+	for _, value := range []string{
+		"//missing-scheme.example",
+		"javascript://example.com",
+		"https:///missing-host",
+		"https://user@public.example/base",
+		"https://public.example/base?x=1",
+		"https://public.example/base?",
+		"https://public.example/base#fragment",
+		"https://public.example/base#",
+	} {
 		t.Run(value, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "config.json")
 			if err := os.WriteFile(path, []byte(fmt.Sprintf(`{"public_base_url":%q}`, value)), 0o600); err != nil {
@@ -181,6 +190,32 @@ func TestLoadConfigRejectsInvalidPublicBaseURL(t *testing.T) {
 	}
 	if _, err := LoadConfig(filepath.Join(t.TempDir(), "missing.json")); err == nil {
 		t.Fatal("invalid environment public_base_url bypassed validation when config file was missing")
+	}
+}
+
+func TestLoadConfigAcceptsValidPublicBaseURL(t *testing.T) {
+	for _, test := range []struct {
+		value string
+		want  string
+	}{
+		{value: "https://public.example", want: "https://public.example"},
+		{value: "HTTPS://public.example", want: "HTTPS://public.example"},
+		{value: "https://public.example/base/", want: "https://public.example/base"},
+		{value: "https://public.example/base%3Fx", want: "https://public.example/base%3Fx"},
+	} {
+		t.Run(test.value, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.json")
+			if err := os.WriteFile(path, []byte(fmt.Sprintf(`{"public_base_url":%q}`, test.value)), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			cfg, err := LoadConfig(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cfg.PublicBaseURL != test.want {
+				t.Fatalf("public_base_url = %q, want %q", cfg.PublicBaseURL, test.want)
+			}
+		})
 	}
 }
 

@@ -259,6 +259,78 @@ func TestLoginRateLimitByUsernameAndClientIP(t *testing.T) {
 	}
 }
 
+func TestAuthRateLimiterPrunesExpiredEntries(t *testing.T) {
+	limiter := &authRateLimiter{entries: make(map[string]authRateEntry)}
+	startedAt := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+	limiter.recordLoginFailure("expired-user", "203.0.113.10", startedAt)
+	if !limiter.allowAction("bootstrap:203.0.113.11", startedAt) {
+		t.Fatal("first action was rejected")
+	}
+
+	limiter.loginBlocked("trigger-cleanup", "203.0.113.12", startedAt.Add(authBlockDuration+time.Second))
+	if len(limiter.entries) != 0 {
+		t.Fatalf("entries after cleanup = %d, want 0", len(limiter.entries))
+	}
+}
+
+func TestAuthRateLimiterKeepsActiveBlockDuringCleanup(t *testing.T) {
+	limiter := &authRateLimiter{entries: make(map[string]authRateEntry)}
+	startedAt := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+	for range authFailureLimit {
+		limiter.recordLoginFailure("blocked-user", "203.0.113.20", startedAt)
+	}
+
+	now := startedAt.Add(time.Minute)
+	limiter.allowAction("bootstrap:203.0.113.21", now)
+	if !limiter.loginBlocked("blocked-user", "203.0.113.20", now) {
+		t.Fatal("active login block was removed during cleanup")
+	}
+	for _, key := range []string{"login-user:blocked-user", "login-ip:203.0.113.20"} {
+		if _, ok := limiter.entries[key]; !ok {
+			t.Fatalf("active entry %q was removed", key)
+		}
+	}
+}
+
+func TestAuthRateLimiterCleanupPreservesThresholds(t *testing.T) {
+	limiter := &authRateLimiter{entries: make(map[string]authRateEntry)}
+	startedAt := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+	for attempt := 1; attempt < authFailureLimit; attempt++ {
+		limiter.recordLoginFailure("threshold-user", "203.0.113.30", startedAt)
+		if limiter.loginBlocked("threshold-user", "203.0.113.30", startedAt) {
+			t.Fatalf("login blocked after failure %d", attempt)
+		}
+	}
+	limiter.recordLoginFailure("threshold-user", "203.0.113.30", startedAt)
+	if !limiter.loginBlocked("threshold-user", "203.0.113.30", startedAt) {
+		t.Fatal("login was not blocked after threshold failure")
+	}
+
+	for attempt := 1; attempt <= authActionLimit; attempt++ {
+		if !limiter.allowAction("create-user:203.0.113.31", startedAt) {
+			t.Fatalf("action %d was rejected", attempt)
+		}
+	}
+	if limiter.allowAction("create-user:203.0.113.31", startedAt) {
+		t.Fatal("action after threshold was allowed")
+	}
+	if !limiter.allowAction("create-user:203.0.113.31", startedAt.Add(authActionWindow)) {
+		t.Fatal("action was rejected after window expiry")
+	}
+}
+
+func TestAuthRateLimiterCleanupHandlesClockRollback(t *testing.T) {
+	limiter := &authRateLimiter{entries: make(map[string]authRateEntry)}
+	rollbackTime := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+	limiter.allowAction("bootstrap:future", rollbackTime.Add(time.Hour))
+	limiter.entries["legacy-expired"] = authRateEntry{}
+
+	limiter.loginBlocked("trigger-cleanup", "203.0.113.40", rollbackTime)
+	if _, ok := limiter.entries["legacy-expired"]; ok {
+		t.Fatal("expired entry survived cleanup after clock rollback")
+	}
+}
+
 func TestPasswordVerificationDoesNotHoldStoreLock(t *testing.T) {
 	store := newTestStore(t)
 	if _, err := store.CreateUser("lock-user", "password"); err != nil {

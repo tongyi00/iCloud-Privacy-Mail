@@ -163,8 +163,9 @@ func validateConfig(cfg Config) (Config, error) {
 		return cfg, nil
 	}
 	parsed, err := url.Parse(value)
-	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
-		return Config{}, errors.New("public_base_url must be an absolute http or https URL")
+	validScheme := err == nil && (strings.EqualFold(parsed.Scheme, "http") || strings.EqualFold(parsed.Scheme, "https"))
+	if err != nil || !parsed.IsAbs() || parsed.Host == "" || !validScheme || parsed.User != nil || strings.ContainsAny(value, "?#") {
+		return Config{}, errors.New("public_base_url must be an absolute http or https URL without user info, query, or fragment")
 	}
 	cfg.PublicBaseURL = value
 	return cfg, nil

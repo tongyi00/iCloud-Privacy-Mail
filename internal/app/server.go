@@ -37,6 +37,7 @@ const authFailureLimit = 5
 const authBlockDuration = 15 * time.Minute
 const authActionLimit = 3
 const authActionWindow = time.Minute
+const authRateCleanupInterval = time.Minute
 
 var mailboxMailSyncMinInterval = 3 * time.Second
 var mailboxCodeFastWait = 600 * time.Millisecond
@@ -125,11 +126,13 @@ type authRateEntry struct {
 	count        int
 	windowStart  time.Time
 	blockedUntil time.Time
+	expiresAt    time.Time
 }
 
 type authRateLimiter struct {
-	mu      sync.Mutex
-	entries map[string]authRateEntry
+	mu            sync.Mutex
+	entries       map[string]authRateEntry
+	lastCleanupAt time.Time
 }
 
 type createMailboxFailure struct {
@@ -747,7 +750,7 @@ func (s *Server) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, err)
 		return
 	}
-	s.authLimiter.recordLoginSuccess(username)
+	s.authLimiter.recordLoginSuccess(username, time.Now())
 	s.setSessionCookie(w, r, token, session.ExpiresAt)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"success": true,
@@ -4522,6 +4525,7 @@ func (s *Server) requiresAdmin(r *http.Request) bool {
 func (l *authRateLimiter) loginBlocked(username, ip string, now time.Time) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	l.cleanupExpiredLocked(now)
 	for _, key := range []string{"login-user:" + normalizeUsername(username), "login-ip:" + ip} {
 		entry := l.entries[key]
 		if entry.blockedUntil.After(now) {
@@ -4534,6 +4538,7 @@ func (l *authRateLimiter) loginBlocked(username, ip string, now time.Time) bool 
 func (l *authRateLimiter) recordLoginFailure(username, ip string, now time.Time) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	l.cleanupExpiredLocked(now)
 	for _, key := range []string{"login-user:" + normalizeUsername(username), "login-ip:" + ip} {
 		entry := l.entries[key]
 		if entry.windowStart.IsZero() || now.Sub(entry.windowStart) >= authBlockDuration {
@@ -4543,19 +4548,25 @@ func (l *authRateLimiter) recordLoginFailure(username, ip string, now time.Time)
 		if entry.count >= authFailureLimit {
 			entry.blockedUntil = now.Add(authBlockDuration)
 		}
+		entry.expiresAt = entry.windowStart.Add(authBlockDuration)
+		if entry.blockedUntil.After(entry.expiresAt) {
+			entry.expiresAt = entry.blockedUntil
+		}
 		l.entries[key] = entry
 	}
 }
 
-func (l *authRateLimiter) recordLoginSuccess(username string) {
+func (l *authRateLimiter) recordLoginSuccess(username string, now time.Time) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	l.cleanupExpiredLocked(now)
 	delete(l.entries, "login-user:"+normalizeUsername(username))
 }
 
 func (l *authRateLimiter) allowAction(key string, now time.Time) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	l.cleanupExpiredLocked(now)
 	entry := l.entries[key]
 	if entry.windowStart.IsZero() || now.Sub(entry.windowStart) >= authActionWindow {
 		entry = authRateEntry{windowStart: now}
@@ -4564,8 +4575,22 @@ func (l *authRateLimiter) allowAction(key string, now time.Time) bool {
 		return false
 	}
 	entry.count++
+	entry.expiresAt = entry.windowStart.Add(authActionWindow)
 	l.entries[key] = entry
 	return true
+}
+
+func (l *authRateLimiter) cleanupExpiredLocked(now time.Time) {
+	elapsed := now.Sub(l.lastCleanupAt)
+	if !l.lastCleanupAt.IsZero() && elapsed >= 0 && elapsed < authRateCleanupInterval {
+		return
+	}
+	for key, entry := range l.entries {
+		if entry.expiresAt.IsZero() || !entry.expiresAt.After(now) {
+			delete(l.entries, key)
+		}
+	}
+	l.lastCleanupAt = now
 }
 
 func requestClientIP(r *http.Request) string {
