@@ -30,6 +30,7 @@
       --danger:         oklch(52% 0.19 25);
       --danger-bg:      oklch(96.5% 0.03 25);
       --danger-border:  oklch(86% 0.08 25);
+      --danger-glow:    oklch(52% 0.19 25 / 0.16);
 
       --focus-ring:     oklch(58% 0.18 255);
       --accent-glow:    oklch(58% 0.18 255 / 0.16);
@@ -65,6 +66,7 @@
       --danger:         oklch(72% 0.16 25);
       --danger-bg:      oklch(28% 0.07 25);
       --danger-border:  oklch(42% 0.11 25);
+      --danger-glow:    oklch(72% 0.16 25 / 0.22);
       --focus-ring:     oklch(70% 0.15 255);
       --accent-glow:    oklch(70% 0.15 255 / 0.22);
       --shadow-modal:   0 16px 40px oklch(0% 0 0 / 0.5);
@@ -139,6 +141,20 @@
     input::placeholder { color: var(--muted); }
     input:hover { border-color: var(--muted); }
     input:focus-visible { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+    input[aria-invalid="true"] { border-color: var(--danger); }
+    input[aria-invalid="true"]:focus-visible { box-shadow: 0 0 0 3px var(--danger-glow); }
+    /* 必填星号只作视觉标记，语义由 input 的 required 提供 */
+    label.req > span:first-child::after { content: "*"; margin-left: 4px; color: var(--danger); }
+    /* 校验提示预留 18px 行高，报错时不产生跳动 */
+    .field-error {
+      display: block;
+      min-height: 18px;
+      margin-top: 6px;
+      color: var(--danger);
+      font-size: 12px;
+      line-height: 18px;
+      font-weight: 400;
+    }
     .actions { margin-top: 20px; }
     /* 页面唯一实心按钮，满宽 */
     button.primary {
@@ -190,8 +206,8 @@
         <button id="loginTab" class="active" role="tab" aria-selected="true" onclick="switchMode('login')">登录</button>
         <button id="registerTab" role="tab" aria-selected="false" onclick="switchMode('register')">注册</button>
       </div>
-      <label for="username">账号<input id="username" autocomplete="username" placeholder="例如 admin 或 user@example.com"></label>
-      <label for="password">密码<input id="password" type="password" autocomplete="current-password" placeholder="至少 6 位"></label>
+      <label class="req" for="username"><span>账号</span><input id="username" autocomplete="username" required aria-describedby="usernameError" placeholder="例如 admin 或 user@example.com"><span class="field-error" id="usernameError" role="alert"></span></label>
+      <label class="req" for="password"><span>密码</span><input id="password" type="password" autocomplete="current-password" required aria-describedby="passwordError" placeholder="至少 6 位"><span class="field-error" id="passwordError" role="alert"></span></label>
       <div class="actions">
         <button class="primary" id="submitButton" onclick="submitAuth()">登录</button>
       </div>
@@ -224,6 +240,7 @@
       $('registerTab').setAttribute('aria-selected', String(!isLogin));
       $('submitButton').textContent = isLogin ? '登录' : '注册并登录';
       clearNotice();
+      clearFieldErrors();
     }
     function setNotice(text, isErr=false) {
       $('notice').textContent = text;
@@ -233,11 +250,34 @@
     function clearNotice() {
       setNotice('');
     }
+    // 字段级校验提示：错误文案就近显示，并同步 aria-invalid 供读屏软件识别
+    function setFieldError(id, text) {
+      const input = $(id);
+      const slot = $(id + 'Error');
+      if (slot) slot.textContent = text || '';
+      if (!input) return;
+      if (text) input.setAttribute('aria-invalid', 'true');
+      else input.removeAttribute('aria-invalid');
+    }
+    function clearFieldErrors() {
+      setFieldError('username', '');
+      setFieldError('password', '');
+    }
     async function submitAuth() {
       const username = $('username').value.trim();
       const password = $('password').value;
-      if (!username || !password) {
-        setNotice('账号和密码不能为空', true);
+      clearFieldErrors();
+      let firstInvalid = '';
+      if (!username) { setFieldError('username', '请输入账号'); firstInvalid = firstInvalid || 'username'; }
+      // 注册时密码长度有下限，登录时只校验非空，避免对历史账号误报
+      if (!password) { setFieldError('password', '请输入密码'); firstInvalid = firstInvalid || 'password'; }
+      else if (mode === 'register' && password.length < 6) {
+        setFieldError('password', '密码至少 6 位');
+        firstInvalid = firstInvalid || 'password';
+      }
+      if (firstInvalid) {
+        clearNotice();
+        $(firstInvalid).focus();
         return;
       }
       $('submitButton').disabled = true;

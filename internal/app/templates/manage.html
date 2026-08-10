@@ -346,14 +346,52 @@
       border-color: var(--accent);
       box-shadow: 0 0 0 3px var(--accent-glow);
     }
-    .table-wrap { overflow: auto; }
+    /* 粘性表头依赖容器高度约束，缺少 max-height 会静默失效 */
+    .table-wrap {
+      overflow: auto;
+      max-height: calc(100vh - 320px);
+      overscroll-behavior: contain;
+    }
     table { width: 100%; min-width: 900px; border-collapse: collapse; }
     th, td { border-top: 1px solid var(--border); padding: 12px 16px; text-align: left; vertical-align: middle; }
-    th { color: var(--muted); background: var(--surface-sunken); font-size: 12px; font-weight: 500; }
+    th {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      color: var(--muted);
+      background: var(--surface-sunken);
+      font-size: 12px;
+      font-weight: 500;
+      box-shadow: inset 0 -1px 0 var(--border);
+    }
     tbody tr:hover { background: var(--surface-hover); }
     .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
-    .email { color: var(--fg); font-family: var(--font-mono); font-size: 13px; font-weight: 400; }
+    /* 长 ID 固定列宽 + 省略号，配合 title 展示全文，避免撑破表格 */
+    td.mono {
+      max-width: 18ch;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .email {
+      display: inline-block;
+      max-width: 24ch;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      vertical-align: bottom;
+      color: var(--fg);
+      font-family: var(--font-mono);
+      font-size: 13px;
+      font-weight: 400;
+    }
     .muted { color: var(--faint); }
+    /* 数字列右对齐并使用等宽数字，便于纵向比对 */
+    td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+    /* 时间列使用等宽数字，长度一致 */
+    td.time { color: var(--fg-secondary); font-variant-numeric: tabular-nums; white-space: nowrap; }
     /* 状态胶囊：默认为「成功」语义，其余语义见下方修饰类 */
     .pill {
       display: inline-flex;
@@ -372,12 +410,29 @@
     .pill.gray { color: var(--neutral-badge); border-color: var(--border); background: var(--neutral-bg); }
     .pill.red { color: var(--danger); border-color: var(--danger-border); background: var(--danger-bg); }
     .pill.amber { color: var(--warning); border-color: var(--warning-border); background: var(--warning-bg); }
+    /* 空态高度不低于 160px，避免空数据时面板塌陷 */
     .empty {
-      padding: 22px 18px;
-      color: var(--muted);
+      display: grid;
+      place-content: center;
+      justify-items: center;
+      gap: var(--space-2);
+      min-height: 160px;
+      padding: var(--space-6);
+      text-align: center;
       border-top: 1px solid var(--border);
       background: var(--surface-sunken);
     }
+    .empty-title { color: var(--fg); font-size: 16px; font-weight: 500; }
+    .empty-desc { color: var(--muted); font-size: 13px; line-height: 18px; }
+    /* 骨架行：加载时保持行高，避免布局跳动 */
+    .skeleton-line {
+      display: block;
+      height: 12px;
+      border-radius: var(--radius-sm);
+      background: var(--surface-hover);
+      animation: skeletonPulse 1.4s var(--ease) infinite;
+    }
+    @keyframes skeletonPulse { 0%, 100% { opacity: 1; } 50% { opacity: .55; } }
     .log {
       margin: 0;
       min-height: 140px;
@@ -406,6 +461,37 @@
       .nav { grid-template-columns: 1fr 1fr; }
       h1 { font-size: 28px; }
       .stat-card strong { font-size: 30px; }
+    }
+    /* ≤820px 表格转卡片列表：每条记录一张卡，不把横向滚动作为唯一方案。
+       字段名靠 data-label 生成，因此表格 DOM 与渲染 JS 结构无需改动。 */
+    @media (max-width: 820px) {
+      .table-wrap { max-height: none; overflow: visible; }
+      .table-wrap table { min-width: 0; display: block; }
+      .table-wrap thead { display: none; }
+      .table-wrap tbody { display: grid; gap: var(--space-3); padding: var(--space-4); }
+      .table-wrap tbody tr {
+        display: grid;
+        gap: var(--space-2);
+        padding: var(--space-4);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        background: var(--surface);
+      }
+      .table-wrap td {
+        display: grid;
+        grid-template-columns: 7rem minmax(0, 1fr);
+        gap: var(--space-3);
+        align-items: baseline;
+        padding: 0;
+        border: 0;
+      }
+      .table-wrap td::before { content: attr(data-label); color: var(--muted); font-size: 12px; }
+      /* 无字段名的单元格（操作区等）跨满整行 */
+      .table-wrap td:not([data-label]) { grid-template-columns: 1fr; }
+      .table-wrap td:not([data-label])::before { content: none; }
+      /* 卡片内不再限制列宽，长文本完整换行显示 */
+      .table-wrap td.mono, .table-wrap .email { max-width: none; white-space: normal; overflow-wrap: anywhere; }
+      .table-wrap td.num, .table-wrap td.time { text-align: left; }
     }
   </style>
 </head>
@@ -473,7 +559,10 @@
             </div>
           </div>
           <div class="account-grid" id="accountCards"></div>
-          <div class="empty" id="accountCardsEmpty" hidden>暂无账号数据</div>
+          <div class="empty" id="accountCardsEmpty" hidden>
+            <div class="empty-title">暂无账号数据</div>
+            <div class="empty-desc">注册用户后会在这里按账号汇总邮箱与验证码数量。</div>
+          </div>
         </section>
 
         <section class="panel view-section" id="usersPanel" data-view="users">
@@ -482,11 +571,14 @@
           </div>
           <div class="table-wrap">
             <table>
-              <thead><tr><th>ID</th><th>账号</th><th>角色</th><th>状态</th><th>创建时间</th><th>最后登录</th><th>操作</th></tr></thead>
+              <thead><tr><th>ID</th><th>账号</th><th>角色</th><th>状态</th><th>创建时间</th><th>最后登录</th><th>操作</th></tr></thead><!-- 字段名与 renderData 中的 data-label 保持一致 -->
               <tbody id="users"></tbody>
             </table>
           </div>
-          <div class="empty" id="usersEmpty" hidden>暂无用户数据</div>
+          <div class="empty" id="usersEmpty" hidden>
+            <div class="empty-title">暂无用户数据</div>
+            <div class="empty-desc">当前查看范围内没有用户，切换左侧账号范围可查看其他数据。</div>
+          </div>
         </section>
 
         <section class="panel view-section" id="mailboxesPanel" data-view="mailboxes">
@@ -506,11 +598,14 @@
           </div>
           <div class="table-wrap">
             <table>
-              <thead><tr><th>ID</th><th>归属</th><th>标签</th><th>邮箱</th><th>状态</th><th>收件</th><th>创建时间</th></tr></thead>
+              <thead><tr><th>ID</th><th>归属</th><th>标签</th><th>邮箱</th><th>状态</th><th class="num">收件</th><th>创建时间</th></tr></thead>
               <tbody id="mailboxes"></tbody>
             </table>
           </div>
-          <div class="empty" id="mailboxesEmpty" hidden>暂无隐私邮箱数据</div>
+          <div class="empty" id="mailboxesEmpty" hidden>
+            <div class="empty-title">暂无隐私邮箱数据</div>
+            <div class="empty-desc">在工作台保存 Apple 登录态并创建邮箱后，记录会出现在这里。</div>
+          </div>
         </section>
 
         <section class="panel view-section" id="accountsPanel" data-view="accounts">
@@ -523,7 +618,10 @@
               <tbody id="accounts"></tbody>
             </table>
           </div>
-          <div class="empty" id="accountsEmpty" hidden>暂无登录账号数据</div>
+          <div class="empty" id="accountsEmpty" hidden>
+            <div class="empty-title">暂无登录账号数据</div>
+            <div class="empty-desc">还没有保存任何 Apple 登录态，保存后可在此查看归属与状态。</div>
+          </div>
         </section>
 
         <section class="panel view-section" data-view="logs">
@@ -776,13 +874,13 @@
 
       $('users').innerHTML = usersInScope.map(u => `
         <tr>
-          <td class="mono">${esc(u.id)}</td>
-          <td>${esc(u.username)}</td>
-          <td>${u.is_admin ? pill('管理员') : pill('普通', 'gray')}</td>
-          <td>${statusPill(u.status)}</td>
-          <td>${esc(u.created_at || '-')}</td>
-          <td>${esc(u.last_login_at || '-')}</td>
-          <td>${currentUser && currentUser.is_admin && !u.is_admin && u.id !== currentUser.id ? `<button class="btn small danger" onclick="deleteUser('${esc(u.id)}')">删除</button>` : '-'}</td>
+          <td class="mono" data-label="ID" title="${esc(u.id)}">${esc(u.id)}</td>
+          <td data-label="账号">${esc(u.username)}</td>
+          <td data-label="角色">${u.is_admin ? pill('管理员') : pill('普通', 'gray')}</td>
+          <td data-label="状态">${statusPill(u.status)}</td>
+          <td class="time" data-label="创建时间">${esc(u.created_at || '-')}</td>
+          <td class="time" data-label="最后登录">${esc(u.last_login_at || '-')}</td>
+          <td data-label="操作">${currentUser && currentUser.is_admin && !u.is_admin && u.id !== currentUser.id ? `<button class="btn small danger" onclick="deleteUser('${esc(u.id)}')">删除</button>` : '-'}</td>
         </tr>`).join('');
       renderEmpty('users', usersInScope);
 
@@ -790,13 +888,13 @@
 
       $('accounts').innerHTML = accounts.map(a => `
         <tr>
-          <td class="mono">${esc(a.id)}</td>
-          <td>${esc(a.owner || '-')}</td>
-          <td>${esc(a.label || '-')}</td>
-          <td>${esc(a.apple_id || '-')}</td>
-          <td>${statusPill(a.status)} ${statusPill(a.icloud_status)}</td>
-          <td>${esc(a.note || '-')}</td>
-          <td>${esc(a.created_at || '-')}</td>
+          <td class="mono" data-label="ID" title="${esc(a.id)}">${esc(a.id)}</td>
+          <td data-label="归属">${esc(a.owner || '-')}</td>
+          <td data-label="标签">${esc(a.label || '-')}</td>
+          <td data-label="Apple ID"><span class="email" title="${esc(a.apple_id || '-')}">${esc(a.apple_id || '-')}</span></td>
+          <td data-label="状态">${statusPill(a.status)} ${statusPill(a.icloud_status)}</td>
+          <td data-label="备注">${esc(a.note || '-')}</td>
+          <td class="time" data-label="创建时间">${esc(a.created_at || '-')}</td>
         </tr>`).join('');
       renderEmpty('accounts', accounts);
       renderMailboxExportAccountOptions(accounts, mailboxes);
@@ -818,13 +916,13 @@
 
       $('mailboxes').innerHTML = pageRows.map(m => `
         <tr>
-          <td class="mono">${esc(m.id)}</td>
-          <td>${esc(m.owner || '-')}</td>
-          <td>${esc(m.label || '-')}</td>
-          <td><span class="email">${esc(m.email || '-')}</span></td>
-          <td>${statusPill(m.status)}</td>
-          <td>${m.receive_count || 0}</td>
-          <td>${esc(m.created_at || '-')}</td>
+          <td class="mono" data-label="ID" title="${esc(m.id)}">${esc(m.id)}</td>
+          <td data-label="归属">${esc(m.owner || '-')}</td>
+          <td data-label="标签">${esc(m.label || '-')}</td>
+          <td data-label="邮箱"><span class="email" title="${esc(m.email || '-')}">${esc(m.email || '-')}</span></td>
+          <td data-label="状态">${statusPill(m.status)}</td>
+          <td class="num" data-label="收件">${m.receive_count || 0}</td>
+          <td class="time" data-label="创建时间">${esc(m.created_at || '-')}</td>
         </tr>`).join('');
       renderEmpty('mailboxes', mailboxes);
     }

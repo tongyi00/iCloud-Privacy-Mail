@@ -403,13 +403,13 @@
 
 ## 分阶段任务
 
-- [ ] 阶段1 令牌层与主题（DESIGN.md 清单 1-2）
+- [x] 阶段1 令牌层与主题（DESIGN.md 清单 1-2）
       10 套主题 → light/dark；`--green*` → `--accent*`；清 manage.html 硬编码色值；保留 data-density
-- [ ] 阶段2 去装饰与归一（清单 3-7）
+- [x] 阶段2 去装饰与归一（清单 3-7）
       移除 27 处 gradient、8 处 backdrop-filter、假高光、.card::before 彩条、大阴影；
       41 处 font-weight 700-950 → 400/500/600；删 5 组入场动画与 10 处 translateY；
       圆角 → {4,6,8,999}；补全 focus-visible（当前 0 覆盖）
-- [ ] 阶段3 表格与表单（清单 8-9）
+- [x] 阶段3 表格与表单（清单 8-9）
       修粘性表头（容器缺高度约束致失效）；行悬浮改中性色；数字列 tabular-nums 右对齐；
       长文本改省略号+title；≤820px 转卡片列表；补空态与骨架屏；
       表单标签 13px/500、必填星号、aria-invalid、.field-error
@@ -425,3 +425,36 @@
 - DOM 契约校验：56 个 `$('id')` 引用全部命中页面实存 id；6 个 querySelectorAll 选择器仍有匹配
 - 键盘可达：登录 → 保存登录态 → 创建邮箱 → 邮箱池取码复制，全程焦点可见
 - 断点 360/390/768/1024/1440/1920px 无横向滚动
+
+## Results
+
+### 阶段1 令牌层与主题（commit 见 refactor/frontend-design-system）
+- `index.html` / `manage.html` / `login.html` 三份模板统一换成 oklch 语义令牌，
+  主题从 10 套收敛为 `light` / `dark`，旧主题名经 `LEGACY_THEME_MAP` 归类迁移，
+  无存储值时跟随 `prefers-color-scheme`。
+- 保留兼容别名层（`--panel`、`--line`、`--text`、`--green` 等映射到语义令牌），
+  未改写的组件规则仍可工作。
+- `login.html` 整体重写：单张 `min(400px,100%)` 居中卡、下划线式标签页、唯一实心按钮。
+
+### 阶段2 去装饰与归一
+- 清掉 27 处 gradient、假高光、`.card::before` 彩条、大阴影与 10 处 translateY 悬浮，
+  字重全部收敛到 400/500/600，圆角收敛到 {4,6,8,999}px，补齐 `:focus-visible` 焦点环。
+- 顺带修掉两个既有缺陷：粘性表头因容器无高度约束而失效；`$('serviceInfo')` 为不可达死代码。
+
+### 阶段3 表格与表单
+- 表格：`.table-wrap` 补 `max-height` 让粘性表头真正生效（manage.html 同样缺失，已一并修）；
+  长文本（邮箱 22ch / ID 18ch）改省略号 + `title`；数字列与时间列用 `tabular-nums`，
+  数字列右对齐且表头同步加 `.num`。
+- 空态：`index.html` 邮箱池区分「筛选无结果」（给清空搜索）与「尚无数据」（给去创建），
+  manage.html 四处空态补标题 + 说明文案，最小高度 160px 防面板塌陷；另加 `.skeleton-line` 骨架样式。
+- 响应式：≤820px 表格转卡片列表，字段名由 `td::before { content: attr(data-label) }` 生成，
+  因此表格 DOM 与渲染 JS 结构无需改动；4 个渲染器共 17 个单元格补上 `data-label`。
+- 表单：必填字段加 `.req` 星号与 `required`；新增 `.field-error`（预留 18px 行高，报错不跳动）；
+  登录页接入字段级校验 `setFieldError`，同步 `aria-invalid` 并聚焦首个非法字段，
+  注册模式额外校验密码长度 ≥ 6；补上 `login.html` 缺失的 `--danger-glow` 令牌。
+
+### 验证情况
+- `bash tasks/check-design.sh`：全部通过（DOM 契约 + 8 项 DESIGN.md 验收，focus-visible 19 处）
+- `rtk go build ./...`：Success
+- `rtk go test ./internal/... -short -count=1`：232 passed
+- 起服务实测 8801 端口：`/` `/login` `/manage` 均 200；三份模板 CSS 花括号配平；var() 引用无未定义令牌
