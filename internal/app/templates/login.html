@@ -1,312 +1,659 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>登录 - iCloud Privacy Mail</title>
-  <style>
-    /* ===== 设计令牌层：与 index.html / manage.html 保持一致，见 docs/design-system/DESIGN.md ===== */
-    :root {
-      color-scheme: light;
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>登录 — iCloud Privacy Mail</title>
+<script>
+// 首次绘制前落主题，避免 FOUC
+(function () {
+  try {
+    var t = localStorage.getItem('icpm.theme');
+    var d = localStorage.getItem('icpm.density');
+    if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+    if (d === 'comfortable' || d === 'compact') document.documentElement.setAttribute('data-density', d);
+  } catch (e) {}
+})();
+</script>
+<style>
+/* ===== 设计令牌（自包含，与 index.html / manage.html 同一套） ===== */
+:root {
+  color-scheme: light;
+  --bg:             oklch(99% 0.002 240);
+  --surface:        oklch(100% 0 0);
+  --surface-sunken: oklch(97.5% 0.003 250);
+  --surface-hover:  oklch(97% 0.004 250);
+  --fg:             oklch(18% 0.012 250);
+  --fg-secondary:   oklch(38% 0.012 250);
+  --muted:          oklch(54% 0.012 250);
+  --border:         oklch(92% 0.005 250);
+  --border-strong:  oklch(86% 0.006 250);
 
-      --bg:             oklch(99% 0.002 240);
-      --surface:        oklch(100% 0 0);
-      --surface-sunken: oklch(97.5% 0.003 250);
-      --surface-hover:  oklch(97% 0.004 250);
-      --fg:             oklch(18% 0.012 250);
-      --fg-secondary:   oklch(38% 0.012 250);
-      --muted:          oklch(54% 0.012 250);
-      --border:         oklch(92% 0.005 250);
-      --border-strong:  oklch(86% 0.006 250);
+  --accent:         oklch(58% 0.18 255);
+  --accent-fg:      oklch(100% 0 0);
+  --accent-hover:   oklch(52% 0.18 255);
+  --accent-text:    oklch(48% 0.19 255);
+  --accent-subtle:  oklch(96% 0.02 255);
+  --accent-border:  oklch(82% 0.08 255);
+  --neutral-badge:  oklch(45% 0.01 250);
+  --neutral-bg:     oklch(96% 0.003 250);
 
-      --accent:         oklch(58% 0.18 255);
-      --accent-fg:      oklch(100% 0 0);
-      --accent-hover:   oklch(52% 0.18 255);
-      --accent-text:    oklch(48% 0.19 255);
+  --success:        oklch(48% 0.13 155);
+  --success-bg:     oklch(96.5% 0.03 155);
+  --success-border: oklch(85% 0.07 155);
+  --danger:         oklch(52% 0.19 25);
+  --danger-bg:      oklch(96.5% 0.03 25);
+  --danger-border:  oklch(86% 0.08 25);
+  --danger-glow:    oklch(52% 0.19 25 / 0.16);
+  --warning:        oklch(52% 0.12 75);
+  --warning-bg:     oklch(96.5% 0.04 85);
+  --warning-border: oklch(85% 0.08 80);
 
-      --success:        oklch(48% 0.13 155);
-      --success-bg:     oklch(96.5% 0.03 155);
-      --success-border: oklch(85% 0.07 155);
-      --danger:         oklch(52% 0.19 25);
-      --danger-bg:      oklch(96.5% 0.03 25);
-      --danger-border:  oklch(86% 0.08 25);
-      --danger-glow:    oklch(52% 0.19 25 / 0.16);
+  --focus-ring:     oklch(58% 0.18 255);
+  --accent-glow:    oklch(58% 0.18 255 / 0.16);
 
-      --focus-ring:     oklch(58% 0.18 255);
-      --accent-glow:    oklch(58% 0.18 255 / 0.16);
+  --shadow-dropdown: 0 4px 12px oklch(20% 0.02 250 / 0.08),
+                     0 1px 2px  oklch(20% 0.02 250 / 0.06);
+  --dur-fast: 100ms;
+  --gap-label: 6px;
+  --gap-btn: var(--space-2);
 
-      --font-body: -apple-system, BlinkMacSystemFont, "SF Pro Text",
-                   "PingFang SC", "HarmonyOS Sans SC", "MiSans",
-                   "Microsoft YaHei UI", system-ui, sans-serif;
+  --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display",
+                  "PingFang SC", "HarmonyOS Sans SC", "MiSans",
+                  "Microsoft YaHei UI", system-ui, sans-serif;
+  --font-body: -apple-system, BlinkMacSystemFont, "SF Pro Text",
+               "PingFang SC", "HarmonyOS Sans SC", "MiSans",
+               "Microsoft YaHei UI", system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono",
+               "JetBrains Mono", Consolas, "Liberation Mono", monospace;
 
-      /* 间距：4px 基准栅格，与 index.html / manage.html 保持同一套档位 */
-      --space-1: 4px;   --space-2: 8px;   --space-3: 12px;  --space-4: 16px;
-      --space-5: 20px;  --space-6: 24px;  --space-8: 32px;  --space-10: 40px;
-      --space-12: 48px; --space-16: 64px;
+  /* 排版阶梯：字号 / 行高成对定义，字重只允许 400 / 500 / 600 */
+  --text-display:     600 28px/34px var(--font-display);
+  --text-h1:          600 20px/28px var(--font-display);
+  --text-h2:          600 16px/24px var(--font-display);
+  --text-body:        400 14px/22px var(--font-body);
+  --text-body-strong: 500 14px/22px var(--font-body);
+  --text-label:       500 13px/18px var(--font-body);
+  --text-caption:     400 12px/18px var(--font-body);
+  --text-table-head:  500 12px/16px var(--font-body);
+  --text-mono-sm:     400 13px/20px var(--font-mono);
+  --text-code:        500 16px/20px var(--font-mono);
 
-      --radius-sm: 4px; --radius-md: 6px; --radius-lg: 8px; --radius-full: 999px;
-      --shadow-modal: 0 16px 40px oklch(20% 0.02 250 / 0.14),
-                      0 2px 6px   oklch(20% 0.02 250 / 0.08);
-      --dur: 140ms;
-      --ease: cubic-bezier(0.2, 0, 0.2, 1);
-    }
-    [data-theme="dark"] {
-      color-scheme: dark;
-      --bg:             oklch(16% 0.008 255);
-      --surface:        oklch(19.5% 0.009 255);
-      --surface-sunken: oklch(17.5% 0.008 255);
-      --surface-hover:  oklch(23% 0.010 255);
-      --fg:             oklch(96% 0.004 250);
-      --fg-secondary:   oklch(80% 0.008 250);
-      --muted:          oklch(65% 0.010 250);
-      --border:         oklch(28% 0.010 255);
-      --border-strong:  oklch(36% 0.012 255);
-      --accent:         oklch(62% 0.17 255);
-      --accent-fg:      oklch(16% 0.01 255);
-      --accent-hover:   oklch(68% 0.16 255);
-      --accent-text:    oklch(76% 0.13 255);
-      --success:        oklch(76% 0.15 158);
-      --success-bg:     oklch(26% 0.05 158);
-      --success-border: oklch(38% 0.08 158);
-      --danger:         oklch(72% 0.16 25);
-      --danger-bg:      oklch(28% 0.07 25);
-      --danger-border:  oklch(42% 0.11 25);
-      --danger-glow:    oklch(72% 0.16 25 / 0.22);
-      --focus-ring:     oklch(70% 0.15 255);
-      --accent-glow:    oklch(70% 0.15 255 / 0.22);
-      --shadow-modal:   0 16px 40px oklch(0% 0 0 / 0.5);
-    }
+  --tracking-display: -0.02em;
+  --tracking-h1:      -0.015em;
+  --tracking-h2:      -0.01em;
 
-    * { box-sizing: border-box; }
-    /* 单列居中卡片，页面背景为纯色（去掉原 radial-gradient 双栏 hero） */
-    body {
-      margin: 0;
-      min-height: 100vh;
-      display: grid;
-      place-items: center;
-      padding: var(--space-6);
-      font: 400 14px/22px var(--font-body);
-      color: var(--fg);
-      background: var(--bg);
-    }
-    .wrap { width: min(400px, 100%); }
-    .page-title { margin: 0 0 var(--space-5); text-align: center; }
-    h1 { margin: 0; font-size: 20px; line-height: 28px; font-weight: 600; }
-    .page-title p { margin: var(--space-1) 0 0; color: var(--muted); font-size: 13px; line-height: 18px; }
-    .card {
-      padding: var(--space-6);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-lg);
-      background: var(--surface);
-      box-shadow: var(--shadow-modal);
-    }
-    /* 登录/注册用下划线式标签页，不用胶囊填充按钮 */
-    .tabs {
-      display: flex;
-      gap: var(--space-5);
-      margin-bottom: var(--space-5);
-      border-bottom: 1px solid var(--border);
-    }
-    .tabs button {
-      padding: 0 0 var(--space-2);
-      border: 0;
-      border-bottom: 2px solid transparent;
-      border-radius: 0;
-      background: transparent;
-      color: var(--muted);
-      font-size: 14px;
-      font-weight: 500;
-      cursor: pointer;
-      transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease);
-    }
-    .tabs button:hover { color: var(--fg); }
-    .tabs button.active { color: var(--fg); border-bottom-color: var(--accent); }
-    .tabs button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
-    label {
-      display: flex;
-      flex-direction: column;
-      gap: var(--space-1);
-      margin: 0 0 var(--space-4);
-      color: var(--fg-secondary);
-      font-size: 13px;
-      line-height: 18px;
-      font-weight: 500;
-    }
-    input {
-      min-height: 36px;
-      padding: 0 var(--space-3);
-      border: 1px solid var(--border-strong);
-      border-radius: var(--radius-md);
-      background: var(--surface);
-      color: var(--fg);
-      font: 400 14px/22px var(--font-body);
-      outline: none;
-      transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
-    }
-    input::placeholder { color: var(--muted); }
-    input:hover { border-color: var(--muted); }
-    input:focus-visible { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
-    input[aria-invalid="true"] { border-color: var(--danger); }
-    input[aria-invalid="true"]:focus-visible { box-shadow: 0 0 0 3px var(--danger-glow); }
-    /* 必填星号只作视觉标记，语义由 input 的 required 提供 */
-    label.req > span:first-child::after { content: "*"; margin-left: var(--space-1); color: var(--danger); }
-    /* 校验提示预留 18px 行高，报错时不产生跳动 */
-    .field-error {
-      display: block;
-      min-height: 18px;
-      margin-top: var(--space-1);
-      color: var(--danger);
-      font-size: 12px;
-      line-height: 18px;
-      font-weight: 400;
-    }
-    .actions { margin-top: var(--space-5); }
-    /* 页面唯一实心按钮，满宽 */
-    button.primary {
-      width: 100%;
-      min-height: 36px;
-      padding: 0 var(--space-4);
-      border: 1px solid transparent;
-      border-radius: var(--radius-md);
-      background: var(--accent);
-      color: var(--accent-fg);
-      font-size: 14px;
-      font-weight: 500;
-      cursor: pointer;
-      transition: background-color var(--dur) var(--ease);
-    }
-    button.primary:hover { background: var(--accent-hover); }
-    button.primary:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
-    button.primary:disabled { background: var(--surface-sunken); color: var(--muted); border-color: var(--border); cursor: not-allowed; }
-    .notice {
-      margin-top: var(--space-4);
-      padding: var(--space-3) var(--space-3);
-      border: 1px solid var(--success-border);
-      border-radius: var(--radius-md);
-      background: var(--success-bg);
-      color: var(--success);
-      font-size: 13px;
-      line-height: 1.6;
-      white-space: pre-wrap;
-    }
-    .notice[hidden] { display: none; }
-    .notice.err { border-color: var(--danger-border); background: var(--danger-bg); color: var(--danger); }
-    /* 移动端触达目标不小于 44px */
-    @media (max-width: 680px) {
-      input, button.primary { min-height: 44px; }
-    }
-    @media (prefers-reduced-motion: reduce) {
-      *, *::before, *::after { transition-duration: .001ms !important; }
-    }
-  </style>
+  --space-1: 4px;  --space-2: 8px;   --space-3: 12px;  --space-4: 16px;
+  --space-5: 20px; --space-6: 24px;  --space-8: 32px;  --space-10: 40px;
+  --radius-sm: 4px; --radius-md: 6px; --radius-lg: 8px; --radius-full: 999px;
+
+  --shadow-modal: 0 16px 40px oklch(20% 0.02 250 / 0.14),
+                  0 2px 6px   oklch(20% 0.02 250 / 0.08);
+  --dur: 140ms;
+  --ease: cubic-bezier(0.2, 0, 0.2, 1);
+  --gap-field: 16px;
+}
+[data-theme="dark"] {
+  color-scheme: dark;
+  --bg:             oklch(16% 0.008 255);
+  --surface:        oklch(19.5% 0.009 255);
+  --surface-sunken: oklch(17.5% 0.008 255);
+  --surface-hover:  oklch(23% 0.010 255);
+  --fg:             oklch(96% 0.004 250);
+  --fg-secondary:   oklch(80% 0.008 250);
+  --muted:          oklch(65% 0.010 250);
+  --border:         oklch(28% 0.010 255);
+  --border-strong:  oklch(36% 0.012 255);
+  --accent:         oklch(62% 0.17 255);
+  --accent-fg:      oklch(16% 0.01 255);
+  --accent-hover:   oklch(68% 0.16 255);
+  --accent-text:    oklch(76% 0.13 255);
+  --accent-subtle:  oklch(26% 0.05 255);
+  --accent-border:  oklch(40% 0.10 255);
+  --neutral-badge:  oklch(72% 0.008 250);
+  --neutral-bg:     oklch(25% 0.008 250);
+  --success:        oklch(76% 0.15 158);
+  --success-bg:     oklch(26% 0.05 158);
+  --success-border: oklch(38% 0.08 158);
+  --danger:         oklch(72% 0.16 25);
+  --danger-bg:      oklch(28% 0.07 25);
+  --danger-border:  oklch(42% 0.11 25);
+  --danger-glow:    oklch(72% 0.16 25 / 0.22);
+  --warning:        oklch(80% 0.14 82);
+  --warning-bg:     oklch(28% 0.06 82);
+  --warning-border: oklch(40% 0.09 82);
+  --danger:         oklch(72% 0.16 25);
+  --danger-bg:      oklch(28% 0.07 25);
+  --danger-border:  oklch(42% 0.11 25);
+  --danger-glow:    oklch(72% 0.16 25 / 0.22);
+  --focus-ring:     oklch(70% 0.15 255);
+  --accent-glow:    oklch(62% 0.17 255 / 0.22);
+  --shadow-modal:   0 16px 40px oklch(0% 0 0 / 0.5);
+  --shadow-dropdown: 0 4px 12px oklch(0% 0 0 / 0.4);
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: var(--space-6);
+  font: var(--text-body);
+  color: var(--fg);
+  background: var(--bg);
+}
+
+/* ===== 登录卡片：单列，最宽 400px ===== */
+.auth-card {
+  width: 100%;
+  max-width: 400px;
+  display: grid;
+  gap: var(--space-5);
+  padding: var(--space-8) var(--space-6);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-modal);
+}
+.auth-head { display: grid; gap: var(--space-1); }
+.auth-head h1 { margin: 0; font: var(--text-display); }
+.auth-head p  { margin: 0; color: var(--muted); font: var(--text-caption); }
+
+/* 下划线标签页（不用胶囊） */
+.tabs {
+  display: flex;
+  gap: var(--space-5);
+  border-bottom: 1px solid var(--border);
+}
+.tab {
+  padding: 0 0 var(--space-2);
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+  font: 500 14px/22px var(--font-body);
+  cursor: pointer;
+  transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+.tab:hover { color: var(--fg); }
+.tab[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--accent); }
+.tab:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+
+/* 提示横幅 */
+.alert {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  font: var(--text-caption);
+  border: 1px solid var(--border);
+  background: var(--surface-sunken);
+  color: var(--fg-secondary);
+}
+.alert.warning { border-color: var(--warning-border); background: var(--warning-bg); color: var(--warning); }
+.alert.danger  { border-color: var(--danger-border);  background: var(--danger-bg);  color: var(--danger);  }
+.alert.success { border-color: var(--success-border); background: var(--success-bg); color: var(--success); }
+.alert.info    { border-color: var(--accent-border);  background: var(--accent-subtle); color: var(--accent-text); }
+.alert[hidden] { display: none; }
+.alert-title { font-weight: 500; }
+
+/* 字段 */
+.auth-fields { display: grid; gap: var(--gap-field); }
+.field { display: grid; gap: var(--space-1); }
+.field-label {
+  display: flex;
+  gap: var(--space-1);
+  align-items: baseline;
+  color: var(--fg-secondary);
+  font: 500 13px/18px var(--font-body);
+}
+.required { color: var(--danger); font-size: 12px; }
+.input {
+  width: 100%;
+  min-height: 36px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--fg);
+  font: var(--text-body);
+  outline: none;
+  transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+}
+.input::placeholder { color: var(--muted); }
+.input:hover { border-color: var(--muted); }
+.input:focus-visible { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+.input[aria-invalid="true"] { border-color: var(--danger); }
+.input[aria-invalid="true"]:focus-visible { box-shadow: 0 0 0 3px var(--danger-glow); }
+/* 验证码：等宽居中，字距让 6 位数字易读 */
+.input.code-input {
+  text-align: center;
+  font: var(--text-code);
+  letter-spacing: 0.34em;
+  text-indent: 0.34em;
+  font-variant-numeric: tabular-nums;
+  min-height: 44px;
+}
+.field-error {
+  min-height: 18px;
+  margin: 0;
+  color: var(--danger);
+  font: 400 12px/18px var(--font-body);
+}
+
+/* 按钮 */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: 36px;
+  padding: 0 var(--space-4);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--fg);
+  font: 500 14px/22px var(--font-body);
+  cursor: pointer;
+  transition: background-color var(--dur) var(--ease), color var(--dur) var(--ease);
+  text-decoration: none;
+}
+.btn.primary {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+.btn.primary:hover { background: var(--accent-hover); }
+.btn.primary:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.btn.primary:disabled { background: var(--surface-sunken); color: var(--muted); border-color: var(--border); cursor: not-allowed; }
+.btn.block { width: 100%; }
+/* aria-busy 时显示加载指示器 */
+.btn[aria-busy="true"] { opacity: 0.7; cursor: wait; }
+
+/* 步骤容器 */
+.auth-step { display: grid; gap: var(--space-5); }
+.auth-step[hidden] { display: none; }
+
+/* 页脚操作行（返回 / 重发） */
+.auth-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border);
+}
+.link-btn {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--accent-text);
+  font: var(--text-caption);
+  cursor: pointer;
+}
+.link-btn:hover { color: var(--accent-hover); text-decoration: underline; }
+.link-btn:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; border-radius: var(--radius-sm); }
+.link-btn:disabled { color: var(--muted); cursor: not-allowed; text-decoration: none; }
+.auth-foot .link-btn:first-child { min-width: 132px; text-align: left; }
+
+@media (max-width: 680px) {
+  .input, .btn.block, .link-btn { min-height: 44px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: .001ms !important; }
+}
+</style>
 </head>
 <body>
-  <main class="wrap">
-    <div class="page-title">
-      <h1>iCloud Privacy Mail</h1>
-      <p>登录后管理 iCloud 隐私邮箱和验证码 API。</p>
+<main class="auth-card" id="authCard">
+
+  <!-- 页眉 -->
+  <div class="auth-head">
+    <h1>iCloud Privacy Mail</h1>
+    <p>隐私邮箱创建、同步和验证码查询工作台。</p>
+  </div>
+
+  <!-- 步骤一：账号密码 + 模式（登录 / 管理员初始化） -->
+  <div class="auth-step" id="stepCredentials">
+
+    <div class="tabs" role="tablist" aria-label="登录或初始化">
+      <button class="tab" id="loginTab" type="button" role="tab"
+              aria-selected="true" aria-controls="authForm">登录</button>
+      <button class="tab" id="initTab" type="button" role="tab"
+              aria-selected="false" aria-controls="authForm">初始化</button>
     </div>
-    <section class="card">
-      <div class="tabs" role="tablist" aria-label="登录或注册">
-        <button id="loginTab" class="active" role="tab" aria-selected="true" onclick="switchMode('login')">登录</button>
-        <button id="registerTab" role="tab" aria-selected="false" onclick="switchMode('register')">注册</button>
-      </div>
-      <label class="req" for="username"><span>账号</span><input id="username" autocomplete="username" required aria-describedby="usernameError" placeholder="例如 admin 或 user@example.com"><span class="field-error" id="usernameError" role="alert"></span></label>
-      <label class="req" for="password"><span>密码</span><input id="password" type="password" autocomplete="current-password" required aria-describedby="passwordError" placeholder="至少 6 位"><span class="field-error" id="passwordError" role="alert"></span></label>
-      <div class="actions">
-        <button class="primary" id="submitButton" onclick="submitAuth()">登录</button>
-      </div>
-      <div class="notice" id="notice" role="status" aria-live="polite" hidden></div>
-    </section>
-  </main>
-  <script>
-    let mode = 'login';
-    const $ = id => document.getElementById(id);
 
-    // 与面板共用 ipm_theme 存储键；无存储值时跟随系统明暗偏好
-    (function initTheme() {
-      let saved = '';
-      try { saved = localStorage.getItem('ipm_theme') || ''; } catch (_) {}
-      if (saved !== 'light' && saved !== 'dark') {
-        const prefersDark = window.matchMedia
-          && window.matchMedia('(prefers-color-scheme: dark)').matches;
-        saved = prefersDark ? 'dark' : 'light';
-      }
-      document.documentElement.dataset.theme = saved;
-    })();
+    <!-- 提示横幅，内容由 JS 按模式更新 -->
+    <div class="alert" id="modeHint" role="status">
+      <div><span class="alert-title">面板用户由管理员开通。</span>
+      忘记密码请联系管理员重置，系统不提供公开注册。</div>
+    </div>
 
-    function switchMode(next) {
-      mode = next;
-      const isLogin = mode === 'login';
-      $('loginTab').classList.toggle('active', isLogin);
-      $('registerTab').classList.toggle('active', !isLogin);
-      // 标签页语义状态需与视觉状态同步，供读屏软件播报
-      $('loginTab').setAttribute('aria-selected', String(isLogin));
-      $('registerTab').setAttribute('aria-selected', String(!isLogin));
-      $('submitButton').textContent = isLogin ? '登录' : '注册并登录';
-      clearNotice();
-      clearFieldErrors();
-    }
-    function setNotice(text, isErr=false) {
-      $('notice').textContent = text;
-      $('notice').classList.toggle('err', isErr);
-      $('notice').hidden = !text;
-    }
-    function clearNotice() {
-      setNotice('');
-    }
-    // 字段级校验提示：错误文案就近显示，并同步 aria-invalid 供读屏软件识别
-    function setFieldError(id, text) {
-      const input = $(id);
-      const slot = $(id + 'Error');
-      if (slot) slot.textContent = text || '';
-      if (!input) return;
-      if (text) input.setAttribute('aria-invalid', 'true');
-      else input.removeAttribute('aria-invalid');
-    }
-    function clearFieldErrors() {
-      setFieldError('username', '');
-      setFieldError('password', '');
-    }
-    async function submitAuth() {
-      const username = $('username').value.trim();
-      const password = $('password').value;
-      clearFieldErrors();
-      let firstInvalid = '';
-      if (!username) { setFieldError('username', '请输入账号'); firstInvalid = firstInvalid || 'username'; }
-      // 注册时密码长度有下限，登录时只校验非空，避免对历史账号误报
-      if (!password) { setFieldError('password', '请输入密码'); firstInvalid = firstInvalid || 'password'; }
-      else if (mode === 'register' && password.length < 6) {
-        setFieldError('password', '密码至少 6 位');
-        firstInvalid = firstInvalid || 'password';
+    <form class="auth-fields" id="authForm" novalidate>
+      <div class="field">
+        <label class="field-label" for="username">
+          账号<span class="required">*</span>
+        </label>
+        <input class="input" id="username" name="username"
+               autocomplete="username"
+               placeholder="例如 admin 或 ops.reader"
+               aria-describedby="usernameError">
+        <p class="field-error" id="usernameError" role="alert"></p>
+      </div>
+
+      <div class="field">
+        <label class="field-label" for="password">
+          密码<span class="required">*</span>
+        </label>
+        <input class="input" id="password" name="password" type="password"
+               autocomplete="current-password"
+               placeholder="至少 6 位"
+               aria-describedby="passwordError">
+        <p class="field-error" id="passwordError" role="alert"></p>
+      </div>
+
+      <!-- 管理员初始化时额外需要启动凭据 -->
+      <div class="field" id="tokenField" hidden>
+        <label class="field-label" for="bootstrapToken">
+          启动凭据<span class="required">*</span>
+        </label>
+        <input class="input" id="bootstrapToken" name="bootstrapToken"
+               type="password"
+               autocomplete="off"
+               placeholder="IPM_BOOTSTRAP_TOKEN 环境变量值"
+               aria-describedby="tokenError">
+        <p class="field-error" id="tokenError" role="alert"></p>
+      </div>
+
+      <!-- 全局错误横幅（字段级校验外的服务端错误） -->
+      <div class="alert danger" id="globalError" role="alert" hidden></div>
+
+      <button class="btn primary block" id="submitButton" type="submit">登录</button>
+    </form>
+  </div>
+
+  <!-- 步骤二：二次验证（后端返回 needs_2fa 时显示） -->
+  <div class="auth-step" id="stepVerify" hidden>
+    <div>
+      <h2 style="margin:0;font:var(--text-h2)">二次验证</h2>
+      <p style="margin:4px 0 0;font:var(--text-caption);color:var(--muted)">验证码已发送至受信设备，有效期内可重复输入。</p>
+    </div>
+
+    <form class="auth-fields" id="verifyForm" novalidate>
+      <div class="field">
+        <label class="field-label" for="verifyCode">
+          6 位验证码<span class="required">*</span>
+        </label>
+        <input class="input code-input" id="verifyCode" name="verifyCode"
+               inputmode="numeric" autocomplete="one-time-code"
+               maxlength="6" placeholder="000000"
+               aria-describedby="verifyCodeError">
+        <p class="field-error" id="verifyCodeError" role="alert"></p>
+      </div>
+      <button class="btn primary block" id="verifyButton" type="submit">提交验证码</button>
+    </form>
+
+    <div class="auth-foot">
+      <!-- 宽度固定，防止倒计时文案变化时按钮跳位 -->
+      <button class="link-btn" type="button" id="resendCode">重新发送验证码</button>
+      <button class="link-btn" type="button" id="backToLogin">返回登录</button>
+    </div>
+  </div>
+
+</main>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ---- 状态 ---- */
+  var currentMode = 'login'; // 'login' | 'init'
+
+  /* ---- 元素引用 ---- */
+  var loginTab        = document.getElementById('loginTab');
+  var initTab         = document.getElementById('initTab');
+  var modeHint        = document.getElementById('modeHint');
+  var submitButton    = document.getElementById('submitButton');
+  var tokenField      = document.getElementById('tokenField');
+  var bootstrapToken  = document.getElementById('bootstrapToken');
+  var passwordEl      = document.getElementById('password');
+  var usernameEl      = document.getElementById('username');
+  var globalError     = document.getElementById('globalError');
+  var stepCredentials = document.getElementById('stepCredentials');
+  var stepVerify      = document.getElementById('stepVerify');
+  var verifyCodeEl    = document.getElementById('verifyCode');
+  var verifyButton    = document.getElementById('verifyButton');
+  var resendCode      = document.getElementById('resendCode');
+  var backToLogin     = document.getElementById('backToLogin');
+  var pendingId       = ''; // 服务端返回的 pending_id，2FA 提交时使用
+
+  /* ---- 工具 ---- */
+  // 设置或清除字段级校验错误
+  function setFieldError(inputId, msg) {
+    var input = document.getElementById(inputId);
+    var errEl = document.getElementById(inputId + 'Error');
+    if (!input) return;
+    if (errEl) errEl.textContent = msg || '';
+    if (msg) input.setAttribute('aria-invalid', 'true');
+    else input.removeAttribute('aria-invalid');
+  }
+
+  // 批量校验；返回首个非法输入元素（用于聚焦）
+  function validate(fields) {
+    var first = null;
+    fields.forEach(function (f) {
+      var msg = f.check(f.el.value);
+      setFieldError(f.el.id, msg);
+      if (msg && !first) first = f.el;
+    });
+    return first;
+  }
+
+  // 加载态：禁用按钮并标记 aria-busy，文案不变避免宽度跳变
+  function busy(btn, on) {
+    if (on) { btn.setAttribute('aria-busy', 'true'); btn.disabled = true; }
+    else    { btn.removeAttribute('aria-busy'); btn.disabled = false; }
+  }
+
+  // 显示全局服务端错误横幅
+  function showGlobalError(msg) {
+    globalError.textContent = msg || '';
+    globalError.hidden = !msg;
+  }
+
+  /* ---- 模式切换 ---- */
+  function switchMode(next) {
+    currentMode = next;
+    var isLogin = next === 'login';
+    loginTab.setAttribute('aria-selected', String(isLogin));
+    initTab.setAttribute('aria-selected', String(!isLogin));
+    submitButton.textContent = isLogin ? '登录' : '创建管理员';
+    // autocomplete 语义随模式变化，让密码管理器能区分两种场景
+    passwordEl.setAttribute('autocomplete', isLogin ? 'current-password' : 'new-password');
+    // 初始化模式需要启动凭据字段
+    tokenField.hidden = isLogin;
+    bootstrapToken.required = !isLogin;
+    // 提示横幅内容随模式变化
+    modeHint.innerHTML = isLogin
+      ? '<div><span class="alert-title">面板用户由管理员开通。</span>' +
+        '忘记密码请联系管理员重置，系统不提供公开注册。</div>'
+      : '<div><span class="alert-title">空系统首次进入。</span>' +
+        '使用一次性启动凭据创建首位管理员，管理员初始化完成后该入口关闭，' +
+        '后续账号由管理员开通。</div>';
+    // 清空所有错误状态
+    ['username','password','bootstrapToken'].forEach(function (id) { setFieldError(id, ''); });
+    showGlobalError('');
+  }
+
+  loginTab.addEventListener('click', function () { switchMode('login'); });
+  initTab.addEventListener('click', function () { switchMode('init'); });
+
+  /* ---- 表单提交 ---- */
+  document.getElementById('authForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+    showGlobalError('');
+
+    // 字段级前端校验
+    var fields = [
+      { el: usernameEl, check: function (v) {
+          return v.trim() ? '' : '请输入账号';
+        }
+      },
+      { el: passwordEl, check: function (v) {
+          if (!v) return '请输入密码';
+          // 初始化模式密码需满足长度下限（服务端同样校验）
+          if (currentMode === 'init' && v.length < 6) return '密码至少 6 位';
+          return '';
+        }
       }
-      if (firstInvalid) {
-        clearNotice();
-        $(firstInvalid).focus();
-        return;
-      }
-      $('submitButton').disabled = true;
-      try {
-        const res = await fetch(mode === 'login' ? '/api/auth/login' : '/api/auth/register', {
-          method: 'POST',
-          credentials: 'same-origin',
-          headers: {'content-type':'application/json'},
-          body: JSON.stringify({username, password})
-        });
-        const data = await res.json();
-        if (!data.success) throw new Error(data.message || data.code || `HTTP ${res.status}`);
-        setNotice(`${mode === 'login' ? '登录' : '注册'}成功：${data.user.username}${data.user.is_admin ? ' / 管理员' : ''}`);
+    ];
+    // 初始化模式额外校验启动凭据字段
+    if (currentMode === 'init') {
+      fields.push({ el: bootstrapToken, check: function (v) {
+          return v.trim() ? '' : '请输入启动凭据';
+        }
+      });
+    }
+
+    var firstInvalid = validate(fields);
+    if (firstInvalid) { firstInvalid.focus(); return; }
+
+    busy(submitButton, true);
+
+    var username = usernameEl.value.trim();
+    var password = passwordEl.value;
+
+    if (currentMode === 'login') {
+      // 登录：POST /api/auth/login；后端可能返回 needs_2fa，需进入步骤二
+      fetch('/api/auth/login', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ username: username, password: password })
+      })
+      .then(function (res) { return res.json().then(function (d) { return { ok: res.ok, data: d }; }); })
+      .then(function (r) {
+        if (r.data.needs_2fa) {
+          // 服务端要求二次验证，保存 pending_id 并切换到步骤二
+          pendingId = r.data.pending_id || '';
+          stepCredentials.hidden = true;
+          stepVerify.hidden = false;
+          verifyCodeEl.focus();
+          return;
+        }
+        if (!r.data.success) throw new Error(r.data.message || r.data.code || 'HTTP ' + (r.ok ? 200 : 'error'));
         location.href = '/';
-      } catch (err) {
-        setNotice(err.message, true);
-      } finally {
-        $('submitButton').disabled = false;
-      }
+      })
+      .catch(function (err) { showGlobalError(err.message); })
+      .finally(function () { busy(submitButton, false); });
+    } else {
+      // 管理员初始化：POST /api/auth/bootstrap，需要 Authorization: Bearer 头
+      fetch('/api/auth/bootstrap', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          'content-type': 'application/json',
+          'Authorization': 'Bearer ' + bootstrapToken.value.trim()
+        },
+        body: JSON.stringify({ username: username, password: password })
+      })
+      .then(function (res) { return res.json().then(function (d) { return { ok: res.ok, data: d }; }); })
+      .then(function (r) {
+        if (!r.data.success) throw new Error(r.data.message || r.data.code || '初始化失败');
+        // 初始化成功后 session cookie 已落，直接跳转
+        location.href = '/';
+      })
+      .catch(function (err) { showGlobalError(err.message); })
+      .finally(function () { busy(submitButton, false); });
     }
-    fetch('/api/auth/me', {credentials:'same-origin'})
-      .then(r => r.json())
-      .then(data => { if (data.authenticated) location.href = '/'; })
-      .catch(() => {});
-  </script>
+  });
+
+  /* ---- 步骤二：验证码提交 ---- */
+  document.getElementById('verifyForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var msg = /^\d{6}$/.test(verifyCodeEl.value.trim()) ? '' : '请输入 6 位数字验证码';
+    var errEl = document.getElementById('verifyCodeError');
+    errEl.textContent = msg;
+    if (msg) { verifyCodeEl.setAttribute('aria-invalid', 'true'); verifyCodeEl.focus(); return; }
+    verifyCodeEl.removeAttribute('aria-invalid');
+
+    busy(verifyButton, true);
+    // 提交 2FA 验证码到服务端
+    fetch('/api/auth/login/2fa', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ pending_id: pendingId, code: verifyCodeEl.value.trim() })
+    })
+    .then(function (res) { return res.json().then(function (d) { return { ok: res.ok, data: d }; }); })
+    .then(function (r) {
+      if (!r.data.success) throw new Error(r.data.message || r.data.code || '验证失败');
+      location.href = '/';
+    })
+    .catch(function (err) {
+      errEl.textContent = err.message;
+      verifyCodeEl.setAttribute('aria-invalid', 'true');
+    })
+    .finally(function () { busy(verifyButton, false); });
+  });
+
+  /* ---- 重新发送：60 秒冷却，避免频繁触发受信设备推送 ---- */
+  var resendTimer = null;
+  resendCode.addEventListener('click', function () {
+    if (resendCode.disabled) return;
+    var left = 60;
+    resendCode.disabled = true;
+    resendCode.textContent = '重新发送（' + left + 's）';
+    resendTimer = setInterval(function () {
+      left -= 1;
+      if (left <= 0) {
+        clearInterval(resendTimer);
+        resendCode.disabled = false;
+        resendCode.textContent = '重新发送验证码';
+      } else {
+        resendCode.textContent = '重新发送（' + left + 's）';
+      }
+    }, 1000);
+  });
+
+  /* ---- 返回登录 ---- */
+  backToLogin.addEventListener('click', function () {
+    // 清除冷却计时器
+    if (resendTimer) { clearInterval(resendTimer); resendTimer = null; }
+    resendCode.disabled = false;
+    resendCode.textContent = '重新发送验证码';
+    // 清空验证码输入框
+    verifyCodeEl.value = '';
+    verifyCodeEl.removeAttribute('aria-invalid');
+    document.getElementById('verifyCodeError').textContent = '';
+    // 切回步骤一
+    stepVerify.hidden = true;
+    stepCredentials.hidden = false;
+    usernameEl.focus();
+  });
+
+  /* ---- 初始化逻辑 ---- */
+  // 1. 已登录则直接跳转，无需等待
+  fetch('/api/auth/me', { credentials: 'same-origin' })
+    .then(function (r) { return r.json(); })
+    .then(function (d) { if (d.authenticated) location.href = '/'; })
+    .catch(function () {});
+
+  // 2. 检测系统是否需要初始化（无任何用户），如需则自动切到 init 标签
+  fetch('/api/auth/status', { credentials: 'same-origin' })
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      if (d.needs_bootstrap) {
+        // 系统为空，自动进入初始化模式，并把初始化标签置为默认
+        switchMode('init');
+        initTab.focus();
+      }
+    })
+    .catch(function () {});
+})();
+</script>
 </body>
 </html>

@@ -66,6 +66,31 @@
       --dur-fast: 100ms;
       --dur:      140ms;
       --ease:     cubic-bezier(0.2, 0, 0.2, 1);
+      /* 排版阶梯 */
+      --text-display:     600 28px/34px var(--font-display);
+      --text-h1:          600 22px/30px var(--font-display);
+      --text-h2:          600 16px/24px var(--font-body);
+      --text-body:        400 14px/22px var(--font-body);
+      --text-body-strong: 500 14px/22px var(--font-body);
+      --text-label:       500 13px/20px var(--font-body);
+      --text-caption:     400 12px/18px var(--font-body);
+      --text-table-head:  500 12px/16px var(--font-body);
+      --text-mono-sm:     400 12px/18px var(--font-mono);
+      --text-code:        400 13px/20px var(--font-mono);
+      --tracking-display: -0.02em;
+      --tracking-h1:      -0.015em;
+      --tracking-h2:      -0.01em;
+      /* 布局密度令牌 */
+      --sidebar-w: 240px;
+      --pad-page:  var(--space-6);
+      --pad-panel: var(--space-4) var(--space-6);
+      --gap-panel: var(--space-4);
+      --gap-card:  var(--space-3);
+      --gap-field: var(--space-4);
+      --gap-label: 6px;
+      --gap-btn:   var(--space-2);
+      --control-h: 36px;
+      --row-h:     48px;
     }
 
     [data-theme="dark"] {
@@ -117,7 +142,7 @@
       background: var(--bg);
     }
     button, select, input { font: inherit; }
-    .shell { display: grid; grid-template-columns: 238px minmax(0, 1fr); min-height: 100vh; }
+    .shell { display: grid; grid-template-columns: 240px minmax(0, 1fr); min-height: 100vh; }
     .sidebar {
       position: sticky;
       top: 0;
@@ -163,7 +188,8 @@
     .nav button:hover { background: var(--surface-hover); color: var(--fg); }
     .nav button.active { background: var(--accent-subtle); color: var(--accent-text); box-shadow: inset 2px 0 0 var(--accent); }
     .nav button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
-    .nav-icon { width: 20px; text-align: center; opacity: .86; }
+    .nav-icon { width: 20px; height: 20px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; opacity: .86; }
+    .nav-icon svg { width: 18px; height: 18px; display: block; }
     .side-note {
       padding: var(--space-3);
       color: var(--muted);
@@ -217,6 +243,82 @@
     .btn.small { padding: 0 var(--space-3); min-height: 28px; border-radius: var(--radius-md); font-size: 13px; }
     .btn.danger { color: var(--danger); border-color: var(--danger-border); background: var(--surface); }
     .btn.danger:hover { background: var(--danger-bg); border-color: var(--danger); }
+    .btn.danger-solid { border-color: transparent; color: var(--accent-fg); background: var(--danger); }
+    .btn.danger-solid:hover { background: oklch(from var(--danger) calc(l - 0.05) c h); }
+    .btn.ghost { border-color: transparent; background: transparent; }
+    .btn.ghost:hover { background: var(--surface-hover); border-color: transparent; }
+    .btn.secondary { border-color: var(--border-strong); background: var(--surface); }
+    .btn.sm { padding: 0 var(--space-2); min-height: 28px; font-size: 13px; }
+    /* 模态框 */
+    .modal-backdrop {
+      position: fixed; inset: 0; z-index: 100;
+      display: flex; align-items: center; justify-content: center;
+      padding: var(--space-4);
+      background: oklch(0% 0 0 / 0.5);
+    }
+    .modal-backdrop[hidden] { display: none; }
+    .modal {
+      width: min(540px, 100%);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      background: var(--surface);
+      box-shadow: var(--shadow-modal);
+      overflow: hidden;
+    }
+    .modal .panel-head { padding: var(--space-4) var(--space-6); border-bottom: 1px solid var(--border); }
+    .modal-body { padding: var(--space-5) var(--space-6); display: grid; gap: var(--gap-field); }
+    .modal-actions { display: flex; justify-content: flex-end; gap: var(--gap-btn); padding: var(--space-4) var(--space-6); border-top: 1px solid var(--border); }
+    /* 表单字段 */
+    .field { display: grid; gap: var(--gap-label); }
+    .field-label { font: var(--text-label); color: var(--fg-secondary); }
+    .field-hint { margin: 0; font: var(--text-caption); color: var(--muted); }
+    .input, .select {
+      width: 100%;
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-md);
+      background: var(--surface);
+      color: var(--fg);
+      padding: 0 var(--space-3);
+      min-height: var(--control-h);
+      font: inherit;
+    }
+    .input:focus-visible, .select:focus-visible {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-glow);
+    }
+    .input-num { width: 100px; text-align: right; font-variant-numeric: tabular-nums; }
+    /* 危险区 */
+    .danger-zone {
+      border: 1px solid var(--danger-border);
+      border-radius: var(--radius-md);
+      padding: var(--space-4);
+      background: var(--danger-bg);
+      display: grid; gap: var(--space-2);
+    }
+    .danger-zone-title { margin: 0; font: var(--text-body-strong); color: var(--danger); }
+    .danger-zone-desc { margin: 0; font: var(--text-caption); color: var(--fg-secondary); }
+    .danger-zone > div { display: flex; gap: var(--gap-btn); flex-wrap: wrap; margin-top: var(--space-1); }
+    /* 用户菜单下拉 */
+    .user-menu-wrap { position: relative; }
+    .user-menu-dropdown {
+      position: absolute; top: calc(100% + 6px); right: 0; z-index: 50;
+      min-width: 160px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      background: var(--surface);
+      box-shadow: var(--shadow-dropdown);
+      overflow: hidden;
+    }
+    .user-menu-dropdown[hidden] { display: none; }
+    .user-menu-dropdown button {
+      display: block; width: 100%; text-align: left;
+      border: 0; background: transparent; color: var(--fg);
+      padding: var(--space-2) var(--space-3); font: inherit; font-size: 14px; cursor: pointer;
+    }
+    .user-menu-dropdown button:hover { background: var(--surface-hover); }
+    .user-menu-dropdown button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
+    .user-menu-dropdown .divider { height: 1px; background: var(--border); margin: var(--space-1) 0; }
     main { padding-top: var(--space-5); padding-bottom: var(--space-8); }
     .view-section { display: none; }
     .view-section.active { display: block; }
@@ -477,17 +579,17 @@
   <div class="shell">
     <aside class="sidebar">
       <div class="brand">
-        <div class="brand-mark">✉</div>
+        <div class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 13.4 6.3 6.7A2 2 0 0 1 8.2 5.4h7.6a2 2 0 0 1 1.9 1.3L20 13.4"/><path d="M4 13.4h4.2l1.3 2.2h5l1.3-2.2H20v3.7A1.9 1.9 0 0 1 18.1 19.2H5.9A1.9 1.9 0 0 1 4 17.1z"/></svg></div>
         <div>Privacy Mail</div>
       </div>
       <nav class="nav">
-        <button class="active" data-view="overview" onclick="setActiveView('overview')"><span class="nav-icon">⌂</span>仪表盘</button>
-        <button data-view="accountManage" onclick="setActiveView('accountManage')"><span class="nav-icon">▣</span>账号管理</button>
-        <button data-view="users" onclick="setActiveView('users')"><span class="nav-icon">◉</span>用户列表</button>
-        <button data-view="mailboxes" onclick="setActiveView('mailboxes')"><span class="nav-icon">✉</span>隐私邮箱</button>
-        <button data-view="accounts" onclick="setActiveView('accounts')"><span class="nav-icon">◎</span>登录账号</button>
-        <button data-view="logs" onclick="setActiveView('logs')"><span class="nav-icon">☰</span>运行日志</button>
-        <button onclick="refresh()"><span class="nav-icon">↻</span>刷新数据</button>
+        <button class="active" data-view="overview" onclick="setActiveView('overview')"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="7" height="7" rx="1.7"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.7"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.7"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.7"/></svg></span>仪表盘</button>
+        <button data-view="accountManage" onclick="setActiveView('accountManage')"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="9" r="4.6"/><path d="m12.4 12.4 7.6 7.6"/><path d="m16.6 16.6 2-2"/></svg></span>账号管理</button>
+        <button data-view="users" onclick="setActiveView('users')"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="3.5"/><path d="M2 20c0-4 2.7-6 6-6s6 2 6 6"/><circle cx="17" cy="10" r="2.5"/><path d="M15 20c0-2.5 1.2-4 4-4"/></svg></span>用户列表</button>
+        <button data-view="mailboxes" onclick="setActiveView('mailboxes')"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 13.4 6.3 6.7A2 2 0 0 1 8.2 5.4h7.6a2 2 0 0 1 1.9 1.3L20 13.4"/><path d="M4 13.4h4.2l1.3 2.2h5l1.3-2.2H20v3.7A1.9 1.9 0 0 1 18.1 19.2H5.9A1.9 1.9 0 0 1 4 17.1z"/></svg></span>隐私邮箱</button>
+        <button data-view="accounts" onclick="setActiveView('accounts')"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="17" height="17" rx="5"/><path d="M12 8.4v7.2M8.4 12h7.2"/></svg></span>登录账号</button>
+        <button data-view="logs" onclick="setActiveView('logs')"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h8M8 10h8M8 14h5"/><rect x="3" y="3" width="18" height="18" rx="3"/></svg></span>运行日志</button>
+        <button onclick="refresh()"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12a8 8 0 0 1 14.3-5"/><path d="M20 12a8 8 0 0 1-14.3 5"/><path d="m18 4 .3 3-3 .3"/><path d="m6 20-.3-3 3-.3"/></svg></span>刷新数据</button>
       </nav>
       <div class="side-note">左侧切换分类；在“账号管理”点某个网站账号后，其它分类会只显示这个人的数据。</div>
     </aside>
@@ -500,21 +602,18 @@
             <div class="subtitle" id="whoami">正在读取账号...</div>
           </div>
           <div class="actions">
-            <button class="btn" onclick="location.href='/'">生成隐私邮箱</button>
-            <button class="btn primary" onclick="refresh()">刷新</button>
-            <button class="btn" onclick="exportData()">导出数据</button>
-            <select id="mailboxExportFormat" class="export-format" title="导出格式">
-              <option value="txt">TXT</option>
-              <option value="csv">CSV</option>
-              <option value="tsv">TSV</option>
-              <option value="jsonl">JSONL</option>
-            </select>
-            <select id="mailboxExportAccount" class="export-account" title="导出账号范围">
-              <option value="">当前查看全部登录态</option>
-            </select>
-            <button class="btn" onclick="exportMailboxAPIs()">导出邮箱API</button>
-            <button class="btn" onclick="exportMailboxEmails()">只导出邮箱</button>
-            <button class="btn" onclick="logout()">退出登录</button>
+            <button class="btn secondary" id="refreshBtn" onclick="refresh()">刷新</button>
+            <button class="btn ghost" id="openConfig" onclick="openConfigModal()" aria-haspopup="dialog">运行配置</button>
+            <div class="user-menu-wrap">
+              <button class="btn ghost" id="userMenuBtn" onclick="toggleUserMenu()" aria-haspopup="true" aria-expanded="false">
+                <span id="userMenuLabel">账号</span>
+              </button>
+              <div class="user-menu-dropdown" id="userMenuDropdown" hidden>
+                <button onclick="location.href='/'">生成隐私邮箱</button>
+                <div class="divider"></div>
+                <button onclick="logout()">退出登录</button>
+              </div>
+            </div>
           </div>
         </div>
       </header>
@@ -612,6 +711,60 @@
           <pre class="log" id="log">等待操作...</pre>
         </section>
       </main>
+    </div>
+  </div>
+
+  <!-- 运行配置模态框：DOM 契约 id mailboxExportFormat / mailboxExportAccount 保留在此 -->
+  <div class="modal-backdrop" id="configModal" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="configTitle">
+      <div class="panel-head">
+        <h2 id="configTitle">运行配置</h2>
+        <button class="btn sm ghost" type="button" id="closeConfig" aria-label="关闭运行配置">关闭</button>
+      </div>
+      <div class="modal-body">
+        <div class="field">
+          <label class="field-label" for="exportScope">导出范围</label>
+          <select class="select" id="exportScope">
+            <option value="all">全部数据</option>
+            <option value="mailboxes">仅隐私邮箱</option>
+            <option value="accounts">仅登录账号</option>
+          </select>
+        </div>
+        <div class="field">
+          <label class="field-label" for="mailboxExportFormat">导出格式</label>
+          <select class="select" id="mailboxExportFormat">
+            <option value="txt">TXT</option>
+            <option value="csv">CSV</option>
+            <option value="tsv">TSV</option>
+            <option value="jsonl">JSONL</option>
+          </select>
+        </div>
+        <div class="field">
+          <label class="field-label" for="mailboxExportAccount">导出账号范围</label>
+          <select class="select" id="mailboxExportAccount">
+            <option value="">当前查看全部登录态</option>
+          </select>
+        </div>
+        <div class="field">
+          <label class="field-label" for="autoInterval">自动检测间隔（分钟）</label>
+          <input class="input input-num" id="autoInterval" type="number" value="15" min="0" max="1440"
+                 inputmode="numeric" aria-describedby="autoIntervalHint">
+          <p class="field-hint" id="autoIntervalHint">设为 0 表示关闭自动检测。</p>
+        </div>
+        <div class="danger-zone">
+          <p class="danger-zone-title">危险操作</p>
+          <p class="danger-zone-desc">清除缓存验证码会删除远端全部已缓存的有效验证码，操作不可撤销。</p>
+          <div>
+            <button class="btn danger" type="button" id="dangerStep1">清除缓存验证码</button>
+            <button class="btn danger-solid" type="button" id="dangerStep2" hidden>确认清除，不可撤销</button>
+            <button class="btn ghost" type="button" id="dangerCancel" hidden>取消</button>
+          </div>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn primary" type="button" onclick="runExportFromModal()">导出数据</button>
+        <button class="btn ghost" type="button" id="closeConfig2">关闭</button>
+      </div>
     </div>
   </div>
 
@@ -767,6 +920,9 @@
       if (!data.authenticated) { location.href = '/login'; throw new Error('未登录'); }
       currentUser = data.user;
       $('whoami').textContent = `当前账号：${currentUser.username}${currentUser.is_admin ? ' / 管理员，可查看全部数据' : ' / 普通用户，仅查看自己数据'}`;
+      /* 同步用户菜单按钮标签 */
+      const label = $('userMenuLabel');
+      if (label) label.textContent = currentUser.username || '账号';
     }
     function renderEmpty(id, rows) {
       const empty = $(id + 'Empty');
@@ -1060,8 +1216,85 @@
       location.href = '/login';
     }
 
+    /* ===== 运行配置模态框 ===== */
+    function openConfigModal() {
+      $('configModal').hidden = false;
+      document.addEventListener('keydown', onModalKeydown);
+      $('closeConfig').focus();
+    }
+    function closeConfigModal() {
+      $('configModal').hidden = true;
+      document.removeEventListener('keydown', onModalKeydown);
+      resetDangerZone();
+      $('openConfig').focus();
+    }
+    function onModalKeydown(e) {
+      if (e.key === 'Escape') closeConfigModal();
+    }
+    function resetDangerZone() {
+      $('dangerStep1').hidden = false;
+      $('dangerStep2').hidden = true;
+      $('dangerCancel').hidden = true;
+    }
+    function initConfigModal() {
+      $('closeConfig').addEventListener('click', closeConfigModal);
+      $('closeConfig2').addEventListener('click', closeConfigModal);
+      /* 点模态遮罩关闭 */
+      $('configModal').addEventListener('click', e => { if (e.target === $('configModal')) closeConfigModal(); });
+      /* 危险区二步确认 */
+      $('dangerStep1').addEventListener('click', () => {
+        $('dangerStep1').hidden = true;
+        $('dangerStep2').hidden = false;
+        $('dangerCancel').hidden = false;
+        $('dangerStep2').focus();
+      });
+      $('dangerCancel').addEventListener('click', resetDangerZone);
+      $('dangerStep2').addEventListener('click', async () => {
+        try {
+          await api('/api/admin/clear-cached-codes', {method:'POST', body:'{}'});
+          log('已清除全部缓存验证码');
+        } catch (err) {
+          log('清除失败：' + err.message);
+        } finally {
+          resetDangerZone();
+        }
+      });
+    }
+
+    /* ===== 用户菜单 ===== */
+    function toggleUserMenu() {
+      const btn = $('userMenuBtn');
+      const dropdown = $('userMenuDropdown');
+      const open = !dropdown.hidden;
+      dropdown.hidden = open;
+      btn.setAttribute('aria-expanded', String(!open));
+      if (!open) {
+        document.addEventListener('click', closeUserMenuOutside, {once: true, capture: true});
+      }
+    }
+    function closeUserMenuOutside(e) {
+      const wrap = document.querySelector('.user-menu-wrap');
+      if (wrap && !wrap.contains(e.target)) {
+        $('userMenuDropdown').hidden = true;
+        $('userMenuBtn').setAttribute('aria-expanded', 'false');
+      }
+    }
+
+    /* exportData 委托给模态框里的导出按钮 */
+    async function runExportFromModal() {
+      const scope = ($('exportScope') || {}).value || 'all';
+      if (scope === 'mailboxes') {
+        await exportMailboxEmails();
+      } else if (scope === 'accounts') {
+        await exportMailboxAPIs();
+      } else {
+        await exportData();
+      }
+    }
+
     initViewNavigation();
     initMailboxPagination();
+    initConfigModal();
     ensureAuth().then(refresh).catch(err => log(err.message));
   </script>
 </body>

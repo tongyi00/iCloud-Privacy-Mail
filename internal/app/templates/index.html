@@ -78,6 +78,49 @@
       --dur-fast: 100ms;
       --dur:      140ms;
       --ease:     cubic-bezier(0.2, 0, 0.2, 1);
+
+      /* 排版阶梯：字号 / 行高成对定义，字重只允许 400 / 500 / 600 */
+      --text-display:     600 28px/34px var(--font-display);
+      --text-h1:          600 20px/28px var(--font-display);
+      --text-h2:          600 16px/24px var(--font-display);
+      --text-metric:      600 30px/34px var(--font-display);
+      --text-body:        400 14px/22px var(--font-body);
+      --text-body-strong: 500 14px/22px var(--font-body);
+      --text-label:       500 13px/18px var(--font-body);
+      --text-caption:     400 12px/18px var(--font-body);
+      --text-table-head:  500 12px/16px var(--font-body);
+      --text-mono-sm:     400 13px/20px var(--font-mono);
+      --text-code:        500 16px/20px var(--font-mono);
+
+      --tracking-display: -0.02em;
+      --tracking-h1:      -0.015em;
+      --tracking-h2:      -0.01em;
+
+      /* 布局与密度（舒展模式默认值） */
+      --sidebar-w:    240px;
+      --content-max:  1440px;
+      --pad-page:     var(--space-6);
+      --pad-panel:    var(--space-5) var(--space-6);
+      --pad-panel-head: var(--space-4) var(--space-6);
+      --gap-panel:    var(--space-4);
+      --gap-card:     var(--space-3);
+      --gap-field:    var(--space-4);
+      --gap-label:    6px;
+      --gap-btn:      var(--space-2);
+      --control-h:    36px;
+      --row-h:        48px;
+    }
+
+    /* 紧凑密度：源实现的 data-density 是真实运维需求，保留 */
+    [data-density="compact"] {
+      --pad-page:      var(--space-4);
+      --pad-panel:     14px var(--space-4);
+      --pad-panel-head:var(--space-3) var(--space-4);
+      --gap-panel:     var(--space-3);
+      --gap-card:      var(--space-2);
+      --gap-field:     var(--space-3);
+      --control-h:     32px;
+      --row-h:         40px;
     }
 
     [data-theme="dark"] {
@@ -527,12 +570,30 @@
     .global-log { min-height: 260px; max-height: 380px; }
     .view-section { display: none; }
     .view-section.active { display: block; }
-    .grid { display: grid; grid-template-columns: repeat(4, minmax(160px, 1fr)); gap: var(--space-4); margin-bottom: var(--space-4); }
+    .grid { display: grid; grid-template-columns: repeat(4, minmax(160px, 1fr)); gap: var(--gap-card); margin-bottom: var(--gap-panel); }
     .card {
       border: 1px solid var(--border);
       border-radius: var(--radius-lg);
       padding: var(--space-5);
       background: var(--surface);
+    }
+    /* 指标卡：遵循设计稿 min-height:96px + gap:12px */
+    .metric-card {
+      display: grid;
+      align-content: center;
+      gap: var(--space-1);
+      min-height: 96px;
+      padding: var(--space-4);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+    }
+    .metric-card .metric-label { font: var(--text-caption); color: var(--muted); }
+    .metric-card .metric-value {
+      font: var(--text-metric);
+      letter-spacing: var(--tracking-display);
+      color: var(--fg);
+      font-variant-numeric: tabular-nums;
     }
     .card strong { display: block; color: var(--fg); font-size: 30px; line-height: 34px; font-weight: 600; margin-bottom: var(--space-2); }
     .card span { color: var(--muted); font-size: 12px; }
@@ -944,6 +1005,8 @@
     }
     table { width: 100%; border-collapse: collapse; min-width: 940px; }
     th, td { border-top: 1px solid var(--border); padding: var(--space-3) var(--space-4); text-align: left; vertical-align: middle; }
+    /* 表格行高显式约束：舒展 48px，紧凑 40px（由 --row-h 令牌控制） */
+    tbody tr { height: var(--row-h); }
     th {
       position: sticky;
       top: 0;
@@ -1318,12 +1381,25 @@
 
       <main class="content-main">
         <section class="view-section active" data-view="overview">
-          <section class="grid">
-            <div class="card"><strong id="accountCount">0</strong><span>登录账号</span></div>
-            <div class="card"><strong id="mailboxCount">0</strong><span>隐私邮箱</span></div>
-            <div class="card"><strong id="messageCount">0</strong><span>已转发验证码</span></div>
-            <div class="card"><strong id="apiStatus">-</strong><span>API 状态</span></div>
-          </section>
+          <!-- 指标卡：min-height 96px，gap 12px，与设计稿对齐 -->
+          <div class="grid" id="metric-grid">
+            <div class="metric-card">
+              <span class="metric-label">登录账号</span>
+              <span class="metric-value" id="accountCount">0</span>
+            </div>
+            <div class="metric-card">
+              <span class="metric-label">隐私邮箱</span>
+              <span class="metric-value" id="mailboxCount">0</span>
+            </div>
+            <div class="metric-card">
+              <span class="metric-label">已转发验证码</span>
+              <span class="metric-value" id="messageCount">0</span>
+            </div>
+            <div class="metric-card">
+              <span class="metric-label">API 状态</span>
+              <span class="metric-value" id="apiStatus">-</span>
+            </div>
+          </div>
 
           <!-- 快速取码：本产品最高频的单一动作，放在首屏一步直达 -->
           <section class="panel quick-code-panel">
@@ -1510,15 +1586,6 @@
                 <button id="syncICloudMailboxesButton" onclick="syncICloudMailboxes()">同步已有邮箱</button>
                 <button onclick="clearMailboxSearch()">清空搜索</button>
               </div>
-              <div class="pager">
-                <label class="page-size-control">每页
-                  <input id="mailboxPageSize" type="number" min="1" max="500" value="10" onchange="setMailboxPageSize()">
-                </label>
-                <button type="button" onclick="saveCreateSettings()">保存配置</button>
-                <button id="mailboxPrevPage" onclick="changeMailboxPage(-1)">上一页</button>
-                <span id="mailboxPageInfo">第 1/1 页</span>
-                <button id="mailboxNextPage" onclick="changeMailboxPage(1)">下一页</button>
-              </div>
             </div>
           </div>
           <div id="mailboxAccountTabs" class="account-tabs"></div>
@@ -1527,6 +1594,16 @@
               <thead><tr><th>标签</th><th>邮箱</th><th>状态</th><th class="num">收件</th><th>验证码</th><th>操作</th></tr></thead>
               <tbody id="mailboxes"></tbody>
             </table>
+            <!-- 分页移至表格底部（设计稿要求） -->
+            <div class="pager">
+              <label class="page-size-control">每页
+                <input id="mailboxPageSize" type="number" min="1" max="500" value="10" onchange="setMailboxPageSize()">
+              </label>
+              <button type="button" onclick="saveCreateSettings()">保存配置</button>
+              <button id="mailboxPrevPage" onclick="changeMailboxPage(-1)">上一页</button>
+              <span id="mailboxPageInfo">第 1/1 页</span>
+              <button id="mailboxNextPage" onclick="changeMailboxPage(1)">下一页</button>
+            </div>
           </div>
         </section>
 
